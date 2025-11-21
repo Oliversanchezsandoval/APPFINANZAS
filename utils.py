@@ -8,7 +8,7 @@ import plotly.express as px
 
 
 # Cambia la constante para invalidar cachés cuando se agregan filtros/limpieza nuevos
-CACHE_BUSTER = "rl_guard_v4"
+CACHE_BUSTER = "rl_guard_v5"
 
 
 # =========================
@@ -183,7 +183,7 @@ def load_multi_prices(tickers, period="1y", interval="1d", _cache_buster=CACHE_B
 def get_financial_highlights(ticker: str, _cache_buster=CACHE_BUSTER) -> pd.DataFrame:
     try:
         t = yf.Ticker(ticker)
-        fast = drop_if_rate_limited(getattr(t, "fast_info", {}) or {}, {})
+        fast = drop_if_rate_limited(sanitize := scrub_rate_limit_payload(getattr(t, "fast_info", {}) or {}), {})
 
         def get_attr(obj, key, default=None):
             try:
@@ -193,7 +193,7 @@ def get_financial_highlights(ticker: str, _cache_buster=CACHE_BUSTER) -> pd.Data
 
         info = {}
         try:
-            info = drop_if_rate_limited(t.info or {}, {})
+            info = drop_if_rate_limited(scrub_rate_limit_payload(t.info or {}), {})
         except Exception:
             info = {}
 
@@ -247,65 +247,6 @@ def _normalize_news_field(value) -> str | None:
     """Normalize news text fields to clean, plain strings."""
 
     if value is None:
-        return None
-
-    if isinstance(value, (list, tuple)):
-        value = " ".join([str(v) for v in value if v])
-    elif isinstance(value, dict):
-        # Prefer common text-bearing keys if a dict is provided
-        for key in ("content", "body", "summary", "description", "title"):
-            if key in value and value[key]:
-                value = value[key]
-                break
-        else:
-            value = str(value)
-
-    text = html.unescape(str(value))
-    # Remove HTML tags and collapse whitespace
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text or None
-
-
-def _looks_like_rate_limit(text: str | None) -> bool:
-    """Detect common rate-limit or block messages to avoid surfacing them as content."""
-
-    if not text:
-        return False
-    lower = str(text).lower()
-    markers = [
-        "fair-use limits",
-        "blocked by the system",
-        "code: 403",
-        "contact support",
-        "this isn’t supposed to happen",
-        "this isn't supposed to happen",
-    ]
-    return any(m in lower for m in markers)
-
-
-def _payload_has_rate_limit(obj) -> bool:
-    """Recursively inspect a payload to see if it contains rate-limit markers."""
-
-    if obj is None:
-        return False
-
-    if isinstance(obj, str):
-        return _looks_like_rate_limit(obj)
-
-    if isinstance(obj, (list, tuple, set)):
-        return any(_payload_has_rate_limit(v) for v in obj)
-
-    if isinstance(obj, dict):
-        return any(_payload_has_rate_limit(v) for v in obj.values())
-
-    return False
-
-
-def strip_rate_limit_text(text: str | None) -> str | None:
-    """Return None when payloads look like rate-limit messages; otherwise clean text."""
-
-    if _looks_like_rate_limit(text):
         return None
     return _normalize_news_field(text) if text is not None else None
 
@@ -383,6 +324,173 @@ def compute_drawdown_episodes(perf_series: pd.Series):
     return drawdown, running_max, episodes
 
 
+    if isinstance(value, (list, tuple)):
+        value = " ".join([str(v) for v in value if v])
+    elif isinstance(value, dict):
+        # Prefer common text-bearing keys if a dict is provided
+        for key in ("content", "body", "summary", "description", "title"):
+            if key in value and value[key]:
+                value = value[key]
+                break
+        else:
+            value = str(value)
+
+    text = html.unescape(str(value))
+    # Remove HTML tags and collapse whitespace
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+def _looks_like_rate_limit(text: str | None) -> bool:
+    """Detect common rate-limit or block messages to avoid surfacing them as content."""
+
+    if not text:
+        return False
+    lower = str(text).lower()
+    markers = [
+        "fair-use limits",
+        "blocked by the system",
+        "code: 403",
+        "contact support",
+        "this isn’t supposed to happen",
+        "this isn't supposed to happen",
+        "exceeded the fair-use",
+        "fair use limits",
+    ]
+    return any(m in lower for m in markers)
+
+
+def _payload_has_rate_limit(obj) -> bool:
+    """Recursively inspect a payload to see if it contains rate-limit markers."""
+
+    if obj is None:
+        return False
+
+    if isinstance(obj, str):
+        return _looks_like_rate_limit(obj)
+
+    if isinstance(obj, (int, float)):
+        return str(int(obj)) == "403"
+
+    if isinstance(obj, (list, tuple, set)):
+        return any(_payload_has_rate_limit(v) for v in obj)
+
+    if isinstance(obj, dict):
+        return any(_payload_has_rate_limit(v) for v in obj.values())
+
+    return False
+
+
+def strip_rate_limit_text(text: str | None) -> str | None:
+    """Return None when payloads look like rate-limit messages; otherwise clean text."""
+
+    if _looks_like_rate_limit(text):
+        return None
+    return _normalize_news_field(text) if text is not None else None
+
+
+def drop_if_rate_limited(payload, fallback=None):
+    """Return fallback if the payload contains rate-limit markers."""
+
+    if _payload_has_rate_limit(payload):
+        return fallback
+    return payload
+
+
+def scrub_rate_limit_payload(payload):
+    """Recursively remove/replace strings that look like rate-limit content."""
+
+    if payload is None:
+        return None
+
+    if isinstance(payload, str):
+        return None if _looks_like_rate_limit(payload) else payload
+
+    if isinstance(payload, (int, float)):
+        return None if str(int(payload)) == "403" else payload
+
+    if isinstance(payload, list):
+        cleaned = [scrub_rate_limit_payload(v) for v in payload]
+        cleaned = [v for v in cleaned if v not in (None, {})]
+        return cleaned
+
+    if isinstance(payload, dict):
+        cleaned = {}
+        for k, v in payload.items():
+            new_v = scrub_rate_limit_payload(v)
+            if new_v not in (None, {}):
+                cleaned[k] = new_v
+        return cleaned
+
+    return payload
+
+
+def compute_drawdown_episodes(perf_series: pd.Series):
+    """Return drawdown, running max and detailed drawdown/recovery episodes."""
+
+    if perf_series is None:
+        return None, None, []
+
+    series = perf_series.dropna()
+    if series.empty:
+        return series, series, []
+
+    running_max = series.cummax()
+    drawdown = series / running_max - 1
+
+    episodes = []
+    in_dd = False
+    start = trough = None
+    trough_val = 0.0
+
+    for date, dd in drawdown.items():
+        if not in_dd and dd < 0:
+            in_dd = True
+            start = date
+            trough = date
+            trough_val = float(dd)
+
+        if in_dd:
+            if dd < trough_val:
+                trough_val = float(dd)
+                trough = date
+
+            if dd >= 0:
+                peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+                trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+                rec_ts = pd.to_datetime(date)
+                episodes.append(
+                    {
+                        "peak": peak_ts,
+                        "trough": trough_ts,
+                        "recovery": rec_ts,
+                        "depth": trough_val,
+                        "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                        "days_to_recover": (rec_ts - peak_ts).days if pd.notnull(rec_ts) else None,
+                    }
+                )
+                in_dd = False
+                start = trough = None
+                trough_val = 0.0
+
+    if in_dd:
+        peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+        trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+        episodes.append(
+            {
+                "peak": peak_ts,
+                "trough": trough_ts,
+                "recovery": None,
+                "depth": trough_val,
+                "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                "days_to_recover": None,
+            }
+        )
+
+    return drawdown, running_max, episodes
+
+
 @st.cache_data(show_spinner=False)
 def get_company_profile(ticker: str, _cache_buster=CACHE_BUSTER) -> dict:
     """Return basic company profile details, short description and logo for a ticker."""
@@ -391,7 +499,7 @@ def get_company_profile(ticker: str, _cache_buster=CACHE_BUSTER) -> dict:
 
         info = {}
         try:
-            info = drop_if_rate_limited(t.info or {}, {})
+            info = drop_if_rate_limited(scrub_rate_limit_payload(t.info or {}), {})
         except Exception:
             info = {}
 
@@ -434,7 +542,7 @@ def get_company_profile(ticker: str, _cache_buster=CACHE_BUSTER) -> dict:
 def get_latest_news(ticker: str, _cache_buster=CACHE_BUSTER) -> dict | None:
     """Return the latest available news item for a ticker from Yahoo Finance."""
     try:
-        items = yf.Ticker(ticker).news or []
+        items = scrub_rate_limit_payload(yf.Ticker(ticker).news or []) or []
     except Exception:
         items = []
 
