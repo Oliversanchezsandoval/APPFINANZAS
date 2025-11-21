@@ -16,6 +16,7 @@ from utils import (
     rolling_beta_series,
     efficient_frontier_simulation,
     compute_drawdown_episodes,
+    strip_rate_limit_text,
 )
 
 st.set_page_config(page_title="Valuación & Portafolio", layout="wide")
@@ -226,6 +227,7 @@ if mod == "Consulta de Acciones":
                 name = profile.get("name") or ticker
                 logo = profile.get("logo_url")
                 summary = profile.get("summary_short") or profile.get("summary")
+                summary = strip_rate_limit_text(summary)
     
                 profile_card = st.container()
                 with profile_card:
