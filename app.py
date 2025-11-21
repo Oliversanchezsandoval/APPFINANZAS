@@ -138,7 +138,12 @@ if mod == "Consulta de Acciones":
             st.subheader("Riesgo de la acción")
             price_col = "Adj Close" if "Adj Close" in df.columns else "Close"
             price_series = df[price_col].dropna()
+            if isinstance(price_series, pd.DataFrame):
+                price_series = price_series.iloc[:, 0]
+
             returns = price_series.pct_change().dropna()
+            if isinstance(returns, pd.DataFrame):
+                returns = returns.iloc[:, 0]
 
             ann_map = {"1d": 252, "1wk": 52, "1mo": 12}
             ann_factor = ann_map.get(interval, 252)
@@ -149,7 +154,8 @@ if mod == "Consulta de Acciones":
             else:
                 ann_vol = returns.std() * np.sqrt(ann_factor)
                 var_95 = returns.quantile(0.05)
-                cvar_95 = returns[returns <= var_95].mean() if (returns <= var_95).any() else np.nan
+                tail_losses = returns[returns <= var_95]
+                cvar_95 = tail_losses.mean() if not tail_losses.empty else np.nan
 
                 rolling_window = 20 if interval == "1d" else 12
                 roll_vol = returns.rolling(rolling_window).std() * np.sqrt(ann_factor)
