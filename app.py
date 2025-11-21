@@ -153,27 +153,36 @@ if mod == "Consulta de Acciones":
             profile = get_company_profile(ticker)
             news = get_latest_news(ticker)
 
-            p1, p2 = st.columns([2, 1])
-            with p1:
-                summary = profile.get("summary")
+            profile_col, news_col = st.columns([3, 2])
+            with profile_col:
+                st.markdown("**Perfil de la empresa**")
                 name = profile.get("name") or ticker
-                lines = []
-                if profile.get("sector"):
-                    lines.append(f"**Sector:** {profile['sector']}")
-                if profile.get("industry"):
-                    lines.append(f"**Industria:** {profile['industry']}")
-                if profile.get("website"):
-                    lines.append(f"**Sitio web:** [{profile['website']}]({profile['website']})")
+                logo = profile.get("logo_url")
+                summary = profile.get("summary_short") or profile.get("summary")
 
-                st.markdown(f"**{name}**")
-                if lines:
-                    st.markdown("<br>".join(lines), unsafe_allow_html=True)
+                top = st.columns([1, 4])
+                with top[0]:
+                    if logo:
+                        st.image(logo, width=96)
+                with top[1]:
+                    st.markdown(f"### {name}")
+                    meta_parts = []
+                    if profile.get("sector"):
+                        meta_parts.append(profile["sector"])
+                    if profile.get("industry"):
+                        meta_parts.append(profile["industry"])
+                    if meta_parts:
+                        st.caption(" · ".join(meta_parts))
+                    if profile.get("website"):
+                        st.markdown(f"[Sitio web]({profile['website']})")
+
                 if summary:
                     st.write(summary)
                 else:
                     st.info("No se encontró una descripción breve para esta empresa.")
 
-            with p2:
+            with news_col:
+                st.markdown("**Última noticia (Yahoo Finance)**")
                 if news:
                     title = news.get("title") or "Noticia reciente"
                     link = news.get("link")
@@ -181,7 +190,6 @@ if mod == "Consulta de Acciones":
                     ts = news.get("published")
                     date_str = ts.strftime("%Y-%m-%d %H:%M") if pd.notnull(ts) else None
 
-                    st.markdown("**Último titular en Yahoo Finance**")
                     if link:
                         st.markdown(f"[{title}]({link})")
                     else:

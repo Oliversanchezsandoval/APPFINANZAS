@@ -129,9 +129,19 @@ def get_financial_highlights(ticker: str) -> pd.DataFrame:
     return df
 
 
+def _shorten_text(text: str | None, max_chars: int = 280) -> str | None:
+    if not text:
+        return None
+    clean = str(text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    snippet = clean[:max_chars].rsplit(" ", 1)[0]
+    return snippet + "…"
+
+
 @st.cache_data(show_spinner=False)
 def get_company_profile(ticker: str) -> dict:
-    """Return basic company profile details and description for a ticker."""
+    """Return basic company profile details, short description and logo for a ticker."""
     t = yf.Ticker(ticker)
 
     info = {}
@@ -140,12 +150,15 @@ def get_company_profile(ticker: str) -> dict:
     except Exception:
         info = {}
 
+    summary = info.get("longBusinessSummary") or info.get("longSummary")
     return {
         "name": info.get("shortName") or info.get("longName") or ticker,
-        "summary": info.get("longBusinessSummary") or info.get("longSummary"),
+        "summary": summary,
+        "summary_short": _shorten_text(summary, 240),
         "sector": info.get("sector"),
         "industry": info.get("industry"),
         "website": info.get("website"),
+        "logo_url": info.get("logo_url") or info.get("logoUrl"),
     }
 
 
