@@ -1,3 +1,5 @@
+import html
+import re
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -127,6 +129,104 @@ def get_financial_highlights(ticker: str) -> pd.DataFrame:
 
     df = pd.DataFrame({"Métrica": list(metrics.keys()), "Valor": list(metrics.values())})
     return df
+
+
+def _shorten_text(text: str | None, max_chars: int = 180) -> str | None:
+    if not text:
+        return None
+    clean = str(text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    snippet = clean[:max_chars].rsplit(" ", 1)[0]
+    return snippet + "…"
+
+
+def _normalize_news_field(value) -> str | None:
+    """Normalize news text fields to clean, plain strings."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join([str(v) for v in value if v])
+    elif isinstance(value, dict):
+        # Prefer common text-bearing keys if a dict is provided
+        for key in ("content", "body", "summary", "description", "title"):
+            if key in value and value[key]:
+                value = value[key]
+                break
+        else:
+            value = str(value)
+
+    text = html.unescape(str(value))
+    # Remove HTML tags and collapse whitespace
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+@st.cache_data(show_spinner=False)
+def get_company_profile(ticker: str) -> dict:
+    """Return basic company profile details, short description and logo for a ticker."""
+    t = yf.Ticker(ticker)
+
+    info = {}
+    try:
+        info = t.info or {}
+    except Exception:
+        info = {}
+
+    summary = info.get("longBusinessSummary") or info.get("longSummary")
+    # CEO detection prioritizes officers with a CEO title, otherwise falls back to info fields
+    ceo_name = None
+    officers = info.get("companyOfficers") or []
+    for officer in officers:
+        title = str(officer.get("title") or "").lower()
+        if "ceo" in title or "chief executive" in title:
+            ceo_name = officer.get("name")
+            break
+    ceo_name = ceo_name or info.get("companyCEO") or info.get("ceo")
+
+    return {
+        "name": info.get("shortName") or info.get("longName") or ticker,
+        "summary": summary,
+        "summary_short": _shorten_text(summary, 160),
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "website": info.get("website"),
+        "logo_url": info.get("logo_url") or info.get("logoUrl"),
+        "ceo": ceo_name,
+        "employees": info.get("fullTimeEmployees"),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def get_latest_news(ticker: str) -> dict | None:
+    """Return the latest available news item for a ticker from Yahoo Finance."""
+    try:
+        items = yf.Ticker(ticker).news or []
+    except Exception:
+        return None
+
+    if not items:
+        return None
+
+    first = items[0] or {}
+
+    # Some providers include a summary/description; keep the richest available
+    summary = _normalize_news_field(
+        first.get("summary")
+        or first.get("content")
+        or first.get("description")
+        or first.get("body")
+    )
+    return {
+        "title": _normalize_news_field(first.get("title")),
+        "link": first.get("link"),
+        "publisher": first.get("publisher"),
+        "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
+        "summary": summary,
+    }
 
 def rebase_to_100(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy().dropna(how="all")
