@@ -248,6 +248,81 @@ def _normalize_news_field(value) -> str | None:
 
     if value is None:
         return None
+    return _normalize_news_field(text) if text is not None else None
+
+
+def drop_if_rate_limited(payload, fallback=None):
+    """Return fallback if the payload contains rate-limit markers."""
+
+    if _payload_has_rate_limit(payload):
+        return fallback
+    return payload
+
+
+def compute_drawdown_episodes(perf_series: pd.Series):
+    """Return drawdown, running max and detailed drawdown/recovery episodes."""
+
+    if perf_series is None:
+        return None, None, []
+
+    series = perf_series.dropna()
+    if series.empty:
+        return series, series, []
+
+    running_max = series.cummax()
+    drawdown = series / running_max - 1
+
+    episodes = []
+    in_dd = False
+    start = trough = None
+    trough_val = 0.0
+
+    for date, dd in drawdown.items():
+        if not in_dd and dd < 0:
+            in_dd = True
+            start = date
+            trough = date
+            trough_val = float(dd)
+
+        if in_dd:
+            if dd < trough_val:
+                trough_val = float(dd)
+                trough = date
+
+            if dd >= 0:
+                peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+                trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+                rec_ts = pd.to_datetime(date)
+                episodes.append(
+                    {
+                        "peak": peak_ts,
+                        "trough": trough_ts,
+                        "recovery": rec_ts,
+                        "depth": trough_val,
+                        "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                        "days_to_recover": (rec_ts - peak_ts).days if pd.notnull(rec_ts) else None,
+                    }
+                )
+                in_dd = False
+                start = trough = None
+                trough_val = 0.0
+
+    if in_dd:
+        peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+        trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+        episodes.append(
+            {
+                "peak": peak_ts,
+                "trough": trough_ts,
+                "recovery": None,
+                "depth": trough_val,
+                "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                "days_to_recover": None,
+            }
+        )
+
+    return drawdown, running_max, episodes
+
 
     if isinstance(value, (list, tuple)):
         value = " ".join([str(v) for v in value if v])
