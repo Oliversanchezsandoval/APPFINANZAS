@@ -32,8 +32,18 @@ COLOR_PALETTE = [
 ]
 
 
+def safe_update_layout(fig, **kwargs):
+    """Update layout ignoring unsupported keys to avoid Plotly validation errors."""
+
+    valid_keys = set(fig.layout._valid_props)
+    filtered = {k: v for k, v in kwargs.items() if k in valid_keys}
+    if filtered:
+        fig.update_layout(**filtered)
+
+
 def apply_elegant_layout(fig):
-    fig.update_layout(
+    safe_update_layout(
+        fig,
         template="plotly_white",
         plot_bgcolor="#f7f9fb",
         paper_bgcolor="#f7f9fb",
@@ -141,20 +151,10 @@ if mod == "Consulta de Acciones":
                     )
                 ]
             )
-            fig.update_traces(
-                increasing=dict(
-                    line=dict(color=PRIMARY_COLOR),
-                    fillcolor=PRIMARY_COLOR,
-                ),
-                decreasing=dict(
-                    line=dict(color=ACCENT_COLOR),
-                    fillcolor=ACCENT_COLOR,
-                ),
-            )
-            fig.update_layout(
-                xaxis_title="Fecha",
-                yaxis_title="Precio",
-                xaxis_rangeslider_visible=False,
+            fig.update_xaxes(title_text="Fecha", rangeslider_visible=False)
+            fig.update_yaxes(title_text="Precio")
+            safe_update_layout(
+                fig,
                 height=520,
                 margin=dict(l=10, r=10, t=40, b=10),
                 increasing_line_color="#0f4c75",
