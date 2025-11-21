@@ -8,8 +8,29 @@ import plotly.express as px
 
 
 # Cambia la constante para invalidar cachés cuando se agregan filtros/limpieza nuevos
-# y evitar que respuestas bloqueadas previamente sigan apareciendo.
-CACHE_BUSTER = "rl_guard_v7_strict"
+# y evitar que respuestas bloqueadas previamente sigan apareciendo. Además, purga
+# las cachés existentes al cargar el módulo para evitar que respuestas bloqueadas
+# de ejecuciones previas sigan circulando.
+CACHE_BUSTER = "rl_guard_v9_purge"
+_CACHES_PURGED = False
+
+
+def _purge_streamlit_caches_once():
+    global _CACHES_PURGED
+    if _CACHES_PURGED:
+        return
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
+    _CACHES_PURGED = True
+
+
+_purge_streamlit_caches_once()
 
 
 # =========================
@@ -249,6 +270,79 @@ def _normalize_news_field(value) -> str | None:
 
     if value is None:
         return None
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join([str(v) for v in value if v])
+    elif isinstance(value, dict):
+        # Prefer common text-bearing keys if a dict is provided
+        for key in ("content", "body", "summary", "description", "title"):
+            if key in value and value[key]:
+                value = value[key]
+                break
+        else:
+            value = str(value)
+
+    text = html.unescape(str(value))
+    # Remove HTML tags and collapse whitespace
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+def _looks_like_rate_limit(text: str | None) -> bool:
+    """Detect common rate-limit or block messages to avoid surfacing them as content."""
+
+    if not text:
+        return False
+    lower = str(text).lower()
+    markers = [
+        "fair-use limits",
+        "blocked by the system",
+        "code: 403",
+        "contact support",
+        "this isn’t supposed to happen",
+        "this isn't supposed to happen",
+        "this isnt supposed to happen",
+        "isn’t supposed to happen",
+        "exceeded the fair-use",
+        "fair use limits",
+        "fair use limit",
+        "exceeded the fair use",
+        "your account has exceeded",
+        "exceeded the daily limit",
+        "blocked by system",
+        "has exceeded the fair",
+        "daily request limit",
+    ]
+    return any(m in lower for m in markers)
+
+
+def _payload_has_rate_limit(obj) -> bool:
+    """Recursively inspect a payload to see if it contains rate-limit markers."""
+
+    if obj is None:
+        return False
+
+    if isinstance(obj, str):
+        return _looks_like_rate_limit(obj)
+
+    if isinstance(obj, (int, float)):
+        return str(int(obj)) == "403"
+
+    if isinstance(obj, (list, tuple, set)):
+        return any(_payload_has_rate_limit(v) for v in obj)
+
+    if isinstance(obj, dict):
+        return any(_payload_has_rate_limit(v) for v in obj.values())
+
+    return False
+
+
+def strip_rate_limit_text(text: str | None) -> str | None:
+    """Return None when payloads look like rate-limit messages; otherwise clean text."""
+
+    if _looks_like_rate_limit(text):
+        return None
     return _normalize_news_field(text) if text is not None else None
 
 
@@ -257,6 +351,34 @@ def drop_if_rate_limited(payload, fallback=None):
 
     if _payload_has_rate_limit(payload):
         return fallback
+    return payload
+
+
+def scrub_rate_limit_payload(payload):
+    """Recursively remove/replace strings that look like rate-limit content."""
+
+    if payload is None:
+        return None
+
+    if isinstance(payload, str):
+        return None if _looks_like_rate_limit(payload) else payload
+
+    if isinstance(payload, (int, float)):
+        return None if str(int(payload)) == "403" else payload
+
+    if isinstance(payload, list):
+        cleaned = [scrub_rate_limit_payload(v) for v in payload]
+        cleaned = [v for v in cleaned if v not in (None, {})]
+        return cleaned
+
+    if isinstance(payload, dict):
+        cleaned = {}
+        for k, v in payload.items():
+            new_v = scrub_rate_limit_payload(v)
+            if new_v not in (None, {}):
+                cleaned[k] = new_v
+        return cleaned
+
     return payload
 
 
@@ -324,86 +446,6 @@ def compute_drawdown_episodes(perf_series: pd.Series):
 
     return drawdown, running_max, episodes
 
-
-    if isinstance(value, (list, tuple)):
-        value = " ".join([str(v) for v in value if v])
-    elif isinstance(value, dict):
-        # Prefer common text-bearing keys if a dict is provided
-        for key in ("content", "body", "summary", "description", "title"):
-            if key in value and value[key]:
-                value = value[key]
-                break
-        else:
-            value = str(value)
-
-    text = html.unescape(str(value))
-    # Remove HTML tags and collapse whitespace
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text or None
-
-
-def _looks_like_rate_limit(text: str | None) -> bool:
-    """Detect common rate-limit or block messages to avoid surfacing them as content."""
-
-    if not text:
-        return False
-    lower = str(text).lower()
-    markers = [
-        "fair-use limits",
-        "blocked by the system",
-        "code: 403",
-        "contact support",
-        "this isn’t supposed to happen",
-        "this isn't supposed to happen",
-        "exceeded the fair-use",
-        "fair use limits",
-    ]
-    return any(m in lower for m in markers)
-
-
-def _payload_has_rate_limit(obj) -> bool:
-    """Recursively inspect a payload to see if it contains rate-limit markers."""
-
-    if obj is None:
-        return False
-
-    if isinstance(obj, str):
-        return _looks_like_rate_limit(obj)
-
-    if isinstance(obj, (int, float)):
-        return str(int(obj)) == "403"
-
-    if isinstance(obj, (list, tuple, set)):
-        return any(_payload_has_rate_limit(v) for v in obj)
-
-    if isinstance(obj, dict):
-        return any(_payload_has_rate_limit(v) for v in obj.values())
-
-    return False
-
-
-def strip_rate_limit_text(text: str | None) -> str | None:
-    """Return None when payloads look like rate-limit messages; otherwise clean text."""
-
-    if _looks_like_rate_limit(text):
-        return None
-    return _normalize_news_field(text) if text is not None else None
-
-
-def drop_if_rate_limited(payload, fallback=None):
-    """Return fallback if the payload contains rate-limit markers."""
-
-    if _payload_has_rate_limit(payload):
-        return fallback
-    return payload
-
-
-def scrub_rate_limit_payload(payload):
-    """Recursively remove/replace strings that look like rate-limit content."""
-
-    if payload is None:
-        return None
 
     if isinstance(payload, str):
         return None if _looks_like_rate_limit(payload) else payload
