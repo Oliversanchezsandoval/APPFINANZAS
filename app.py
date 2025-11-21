@@ -130,6 +130,14 @@ if mod == "Consulta de Acciones":
                         low=df["Low"],
                         close=df["Close"],
                         name=ticker,
+                        increasing=dict(
+                            line=dict(color=PRIMARY_COLOR),
+                            fillcolor=PRIMARY_COLOR,
+                        ),
+                        decreasing=dict(
+                            line=dict(color=ACCENT_COLOR),
+                            fillcolor=ACCENT_COLOR,
+                        ),
                     )
                 ]
             )
