@@ -35,11 +35,31 @@ COLOR_PALETTE = [
 ]
 
 
+_KALEIDO_SCOPE = None
+
+
+def _get_kaleido_scope():
+    """Return a shared Kaleido scope to avoid leaking file descriptors across renders."""
+
+    global _KALEIDO_SCOPE
+    if _KALEIDO_SCOPE is None:
+        try:
+            from kaleido.scopes.plotly import PlotlyScope
+
+            _KALEIDO_SCOPE = PlotlyScope()
+        except Exception:
+            _KALEIDO_SCOPE = False
+    return _KALEIDO_SCOPE
+
+
 def fig_to_png(fig):
-    """Return PNG bytes for a Plotly figure using kaleido, or None if unavailable."""
+    """Return PNG bytes for a Plotly figure using a shared kaleido scope, or None."""
 
     try:
-        return fig.to_image(format="png", engine="kaleido")
+        scope = _get_kaleido_scope()
+        if not scope:
+            return None
+        return scope.transform(fig, format="png")
     except Exception:
         return None
 
