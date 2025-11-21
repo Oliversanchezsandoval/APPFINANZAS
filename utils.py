@@ -8,7 +8,7 @@ import plotly.express as px
 
 
 # Cambia la constante para invalidar cachés cuando se agregan filtros/limpieza nuevos
-CACHE_BUSTER = "rl_guard_v2"
+CACHE_BUSTER = "rl_guard_v3"
 
 
 # =========================
@@ -284,6 +284,24 @@ def _looks_like_rate_limit(text: str | None) -> bool:
     return any(m in lower for m in markers)
 
 
+def _payload_has_rate_limit(obj) -> bool:
+    """Recursively inspect a payload to see if it contains rate-limit markers."""
+
+    if obj is None:
+        return False
+
+    if isinstance(obj, str):
+        return _looks_like_rate_limit(obj)
+
+    if isinstance(obj, (list, tuple, set)):
+        return any(_payload_has_rate_limit(v) for v in obj)
+
+    if isinstance(obj, dict):
+        return any(_payload_has_rate_limit(v) for v in obj.values())
+
+    return False
+
+
 def strip_rate_limit_text(text: str | None) -> str | None:
     """Return None when payloads look like rate-limit messages; otherwise clean text."""
 
@@ -369,6 +387,9 @@ def get_company_profile(ticker: str, _cache_buster=CACHE_BUSTER) -> dict:
         except Exception:
             info = {}
 
+        if _payload_has_rate_limit(info):
+            return _placeholder_profile(ticker)
+
         summary = strip_rate_limit_text(info.get("longBusinessSummary") or info.get("longSummary"))
         # CEO detection prioritizes officers with a CEO title, otherwise falls back to info fields
         ceo_name = None
@@ -413,6 +434,9 @@ def get_latest_news(ticker: str, _cache_buster=CACHE_BUSTER) -> dict | None:
         return None
 
     first = items[0] or {}
+
+    if _payload_has_rate_limit(first):
+        return None
 
     # Some providers include a summary/description; keep the richest available
     summary = strip_rate_limit_text(
