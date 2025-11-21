@@ -15,6 +15,7 @@ from utils import (
     capm_analysis,
     rolling_beta_series,
     efficient_frontier_simulation,
+    compute_drawdown_episodes,
 )
 
 st.set_page_config(page_title="Valuación & Portafolio", layout="wide")
@@ -182,6 +183,8 @@ if mod == "Consulta de Acciones":
     with c3:
         interval = st.selectbox("Intervalo", ["1d", "1wk", "1mo"], index=0)
 
+    dd_context = None
+
     if ticker:
         df = fetch_price_history(ticker, period=period, interval=interval)
         if df is None or df.empty:
@@ -317,6 +320,12 @@ if mod == "Consulta de Acciones":
                 perf_curve = (1 + returns).cumprod()
                 running_max = perf_curve.cummax()
                 drawdown = (perf_curve / running_max - 1).rename("Drawdown")
+                dd_context = {
+                    "returns": returns,
+                    "perf_curve": perf_curve,
+                    "running_max": running_max,
+                    "drawdown": drawdown,
+                }
 
                 t1, t2 = st.tabs(["Volatilidad móvil", "Caídas máximas"])
 
@@ -356,6 +365,81 @@ if mod == "Consulta de Acciones":
                         dd_fig = apply_elegant_layout(dd_fig)
                         st.plotly_chart(dd_fig, use_container_width=True)
                         render_export_controls(dd_fig, drawdown, f"{ticker}_drawdown")
+
+            st.markdown("---")
+            st.subheader("Drawdown & Recuperación")
+
+            if not dd_context:
+                st.info("No hay suficientes datos para analizar drawdowns y recuperaciones en este ticker.")
+            else:
+                drawdown = dd_context["drawdown"]
+                perf_curve = dd_context["perf_curve"]
+                running_max = dd_context["running_max"]
+
+                dd_series, _, episodes = compute_drawdown_episodes(perf_curve)
+                if dd_series is None or dd_series.empty:
+                    st.info("No se pudieron calcular episodios de drawdown.")
+                else:
+                    max_depth = dd_series.min()
+                    current_dd = dd_series.iloc[-1]
+                    zeros = dd_series[dd_series >= -1e-9]
+                    last_peak = zeros.index.max() if not zeros.empty else dd_series.index[0]
+                    days_since_peak = (dd_series.index[-1] - last_peak).days if last_peak is not None else None
+
+                    recovered_eps = [e for e in episodes if e.get("days_to_recover") is not None]
+                    longest_recovery = max((e["days_to_recover"] for e in recovered_eps), default=None)
+
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Drawdown máximo", f"{max_depth*100:.2f}%")
+                    m2.metric("Drawdown actual", f"{current_dd*100:.2f}%")
+                    if days_since_peak is not None:
+                        m3.metric("Días desde máximo previo", f"{int(days_since_peak)} días")
+                    else:
+                        m3.metric("Días desde máximo previo", "-")
+                    if longest_recovery is not None:
+                        st.caption(f"Recuperación más larga: {int(longest_recovery)} días")
+
+                    traj_df = pd.concat(
+                        [
+                            (perf_curve * 100).rename("Índice (100=Inicio)"),
+                            (running_max * 100).rename("Máximo acumulado"),
+                        ],
+                        axis=1,
+                    )
+                    traj_fig = px.line(
+                        traj_df,
+                        labels={"index": "Fecha", "value": "Índice"},
+                        color_discrete_sequence=[PRIMARY_COLOR, ACCENT_COLOR],
+                    )
+                    safe_update_layout(traj_fig, height=420, margin=dict(l=10, r=10, t=20, b=10))
+                    traj_fig = apply_elegant_layout(traj_fig)
+                    st.plotly_chart(traj_fig, use_container_width=True)
+                    render_export_controls(traj_fig, traj_df, f"{ticker}_recuperacion")
+
+                    episodes_df = pd.DataFrame(episodes)
+                    if episodes_df.empty:
+                        st.info("No se identificaron episodios de drawdown.")
+                    else:
+                        episodes_df = episodes_df.sort_values("depth")
+                        episodes_df["peak"] = episodes_df["peak"].dt.date
+                        episodes_df["trough"] = episodes_df["trough"].dt.date
+                        episodes_df["recovery"] = episodes_df["recovery"].dt.date
+                        episodes_df["depth_pct"] = episodes_df["depth"] * 100
+
+                        nice_cols = {
+                            "peak": "Inicio",
+                            "trough": "Mínimo",
+                            "recovery": "Recuperación",
+                            "depth_pct": "Caída máx (%)",
+                            "days_to_trough": "Días a mínimo",
+                            "days_to_recover": "Días a recuperar",
+                        }
+                        view_df = episodes_df[nice_cols.keys()].rename(columns=nice_cols)
+                        st.dataframe(
+                            view_df,
+                            use_container_width=True,
+                            column_config={"Caída máx (%)": st.column_config.NumberColumn(format="%.2f")},
+                        )
 
             # Comparación vs S&P 500
             st.subheader("Comparativa vs S&P 500 (rebalance a 100)")
