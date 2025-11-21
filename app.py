@@ -17,12 +17,15 @@ from utils import (
 
 st.set_page_config(page_title="Valuación & Portafolio", layout="wide")
 
+PRIMARY_COLOR = "#0f4c75"
+ACCENT_COLOR = "#e76f51"
+
 COLOR_PALETTE = [
-    "#0f4c75",
+    PRIMARY_COLOR,
     "#3282b8",
     "#1b262c",
     "#f4a261",
-    "#e76f51",
+    ACCENT_COLOR,
     "#5e60ce",
     "#46a3ff",
     "#72efdd",
@@ -43,42 +46,42 @@ def apply_elegant_layout(fig):
 
 
 st.markdown(
-    """
+    f"""
     <style>
-    :root {
-        --primary-color: #0f4c75;
-        --accent-color: #e76f51;
-    }
-    .stApp {
+    :root {{
+        --primary-color: {PRIMARY_COLOR};
+        --accent-color: {ACCENT_COLOR};
+    }}
+    .stApp {{
         background: linear-gradient(135deg, #f7f9fb 0%, #eef2f7 50%, #f7f9fb 100%);
         color: #0f172a;
-    }
-    h1, h2, h3, h4 {
+    }}
+    h1, h2, h3, h4 {{
         font-family: 'Inter', 'Helvetica', sans-serif;
         letter-spacing: 0.2px;
-    }
-    .stSidebar, .stSidebar .stSelectbox, .stSidebar .stRadio {
+    }}
+    .stSidebar, .stSidebar .stSelectbox, .stSidebar .stRadio {{
         background: #0f172a;
         color: #e5e7eb;
-    }
-    .stSidebar h2, .stSidebar p, .stSidebar label {
+    }}
+    .stSidebar h2, .stSidebar p, .stSidebar label {{
         color: #e5e7eb !important;
-    }
-    .stButton>button, .stDownloadButton>button {
+    }}
+    .stButton>button, .stDownloadButton>button {{
         background-color: var(--primary-color);
         color: #f9fafb;
         border: 0;
         border-radius: 8px;
         padding: 0.6rem 1.1rem;
-    }
-    .stButton>button:hover, .stDownloadButton>button:hover {
+    }}
+    .stButton>button:hover, .stDownloadButton>button:hover {{
         background-color: var(--accent-color);
         color: #fff;
-    }
-    .stMetric label {
+    }}
+    .stMetric label {{
         color: #4b5563;
-    }
-    .stDataFrame, .stTable { background: #ffffff88; }
+    }}
+    .stDataFrame, .stTable {{ background: #ffffff88; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -129,6 +132,16 @@ if mod == "Consulta de Acciones":
                         name=ticker,
                     )
                 ]
+            )
+            fig.update_traces(
+                increasing=dict(
+                    line=dict(color=PRIMARY_COLOR),
+                    fillcolor=PRIMARY_COLOR,
+                ),
+                decreasing=dict(
+                    line=dict(color=ACCENT_COLOR),
+                    fillcolor=ACCENT_COLOR,
+                ),
             )
             fig.update_layout(
                 xaxis_title="Fecha",
