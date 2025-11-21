@@ -7,6 +7,10 @@ import yfinance as yf
 import plotly.express as px
 
 
+# Cambia la constante para invalidar cachés cuando se agregan filtros/limpieza nuevos
+CACHE_BUSTER = "rl_guard_v2"
+
+
 # =========================
 # Utilidades de respaldo
 # =========================
@@ -85,7 +89,7 @@ def _placeholder_profile(ticker: str) -> dict:
 # =========================
 
 @st.cache_data(show_spinner=False)
-def fetch_price_history(ticker: str, period="1y", interval="1d"):
+def fetch_price_history(ticker: str, period="1y", interval="1d", _cache_buster=CACHE_BUSTER):
     """
     Descarga robusta con reintentos/fallback y normalización de columnas/índice.
     Evita falsos vacíos de yfinance y problemas de MultiIndex/zonas horarias.
@@ -126,7 +130,7 @@ def fetch_price_history(ticker: str, period="1y", interval="1d"):
     return _generate_placeholder_history(tk or "PX", period=period, interval=interval)
 
 @st.cache_data(show_spinner=False)
-def load_multi_prices(tickers, period="1y", interval="1d"):
+def load_multi_prices(tickers, period="1y", interval="1d", _cache_buster=CACHE_BUSTER):
     """
     Devuelve un DataFrame de precios 'Adj Close' (o 'Close' si no hay) para 1+ tickers.
     Soporta salida con MultiIndex de yfinance y asegura índice ordenado.
@@ -176,7 +180,7 @@ def load_multi_prices(tickers, period="1y", interval="1d"):
     return adj
 
 @st.cache_data(show_spinner=False)
-def get_financial_highlights(ticker: str) -> pd.DataFrame:
+def get_financial_highlights(ticker: str, _cache_buster=CACHE_BUSTER) -> pd.DataFrame:
     try:
         t = yf.Ticker(ticker)
         fast = getattr(t, "fast_info", {}) or {}
@@ -354,7 +358,7 @@ def compute_drawdown_episodes(perf_series: pd.Series):
 
 
 @st.cache_data(show_spinner=False)
-def get_company_profile(ticker: str) -> dict:
+def get_company_profile(ticker: str, _cache_buster=CACHE_BUSTER) -> dict:
     """Return basic company profile details, short description and logo for a ticker."""
     try:
         t = yf.Ticker(ticker)
@@ -398,7 +402,7 @@ def get_company_profile(ticker: str) -> dict:
 
 
 @st.cache_data(show_spinner=False)
-def get_latest_news(ticker: str) -> dict | None:
+def get_latest_news(ticker: str, _cache_buster=CACHE_BUSTER) -> dict | None:
     """Return the latest available news item for a ticker from Yahoo Finance."""
     try:
         items = yf.Ticker(ticker).news or []
@@ -500,7 +504,7 @@ def compute_portfolio_metrics(price_df: pd.DataFrame, weights, benchmark: pd.Ser
 # =========================
 
 @st.cache_data(show_spinner=False)
-def capm_analysis(ticker: str, market: str, period="1y", freq="Diaria"):
+def capm_analysis(ticker: str, market: str, period="1y", freq="Diaria", _cache_buster=CACHE_BUSTER):
     """
     Devuelve dict con:
       - returns: DataFrame con columnas Ri, Rm
@@ -574,7 +578,7 @@ def _portfolio_stats(w: np.ndarray, mu: pd.Series, cov: pd.DataFrame, rf: float)
     return ret, vol, sharpe
 
 @st.cache_data(show_spinner=False)
-def efficient_frontier_simulation(tickers, period="1y", rf=0.03, n_portfolios=15000, allow_short=False):
+def efficient_frontier_simulation(tickers, period="1y", rf=0.03, n_portfolios=15000, allow_short=False, _cache_buster=CACHE_BUSTER):
     prices = load_multi_prices(tickers, period=period, interval="1d")
     placeholder = bool(getattr(prices, "attrs", {}).get("placeholder"))
     if prices is None or prices.empty:
