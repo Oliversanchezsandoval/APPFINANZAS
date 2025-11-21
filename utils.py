@@ -128,6 +128,59 @@ def get_financial_highlights(ticker: str) -> pd.DataFrame:
     df = pd.DataFrame({"Métrica": list(metrics.keys()), "Valor": list(metrics.values())})
     return df
 
+
+def _shorten_text(text: str | None, max_chars: int = 280) -> str | None:
+    if not text:
+        return None
+    clean = str(text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    snippet = clean[:max_chars].rsplit(" ", 1)[0]
+    return snippet + "…"
+
+
+@st.cache_data(show_spinner=False)
+def get_company_profile(ticker: str) -> dict:
+    """Return basic company profile details, short description and logo for a ticker."""
+    t = yf.Ticker(ticker)
+
+    info = {}
+    try:
+        info = t.info or {}
+    except Exception:
+        info = {}
+
+    summary = info.get("longBusinessSummary") or info.get("longSummary")
+    return {
+        "name": info.get("shortName") or info.get("longName") or ticker,
+        "summary": summary,
+        "summary_short": _shorten_text(summary, 240),
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "website": info.get("website"),
+        "logo_url": info.get("logo_url") or info.get("logoUrl"),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def get_latest_news(ticker: str) -> dict | None:
+    """Return the latest available news item for a ticker from Yahoo Finance."""
+    try:
+        items = yf.Ticker(ticker).news or []
+    except Exception:
+        return None
+
+    if not items:
+        return None
+
+    first = items[0] or {}
+    return {
+        "title": first.get("title"),
+        "link": first.get("link"),
+        "publisher": first.get("publisher"),
+        "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
+    }
+
 def rebase_to_100(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy().dropna(how="all")
     base = df.iloc[0]
