@@ -162,29 +162,39 @@ if mod == "Consulta de Acciones":
                 info_col, news_col = st.columns([1.2, 1])
 
                 with info_col:
-                    header = st.columns([1, 4])
-                    with header[0]:
-                        if logo:
-                            st.image(logo, width=88)
-                    with header[1]:
-                        st.markdown(f"### {name}")
-                        meta_parts = []
-                        if profile.get("sector"):
-                            meta_parts.append(profile["sector"])
-                        if profile.get("industry"):
-                            meta_parts.append(profile["industry"])
-                        if meta_parts:
-                            st.caption(" · ".join(meta_parts))
-                        if profile.get("website"):
-                            st.markdown(f"[Sitio web]({profile['website']})")
+                    meta_parts = []
+                    if profile.get("sector"):
+                        meta_parts.append(profile["sector"])
+                    if profile.get("industry"):
+                        meta_parts.append(profile["industry"])
+                    meta = " · ".join(meta_parts) if meta_parts else None
 
-                        ceo_line = []
-                        if profile.get("ceo"):
-                            ceo_line.append(f"CEO: {profile['ceo']}")
-                        if profile.get("employees"):
-                            ceo_line.append(f"Empleados: {int(profile['employees']):,}".replace(",", "."))
-                        if ceo_line:
-                            st.caption(" · ".join(ceo_line))
+                    if logo:
+                        header_html = f"""
+                        <div style="display:flex; align-items:center; gap:12px; padding:6px 0;">
+                            <img src="{logo}" alt="Logo de {name}" style="width:64px; height:64px; object-fit:contain; background:#0f172a; border-radius:12px; padding:6px; border:1px solid #1f2937;" />
+                            <div style="line-height:1.2;">
+                                <div style="font-size:1.1rem; font-weight:700; color:#f8fafc;">{name}</div>
+                                {f'<div style="color:#94a3b8; font-size:0.9rem;">{meta}</div>' if meta else ''}
+                            </div>
+                        </div>
+                        """
+                        st.markdown(header_html, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"### {name}")
+                        if meta:
+                            st.caption(meta)
+
+                    if profile.get("website"):
+                        st.markdown(f"[Sitio web]({profile['website']})")
+
+                    ceo_line = []
+                    if profile.get("ceo"):
+                        ceo_line.append(f"CEO: {profile['ceo']}")
+                    if profile.get("employees"):
+                        ceo_line.append(f"Empleados: {int(profile['employees']):,}".replace(",", "."))
+                    if ceo_line:
+                        st.caption(" · ".join(ceo_line))
 
                     st.markdown("**Descripción breve**")
                     if summary:
