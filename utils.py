@@ -129,7 +129,7 @@ def get_financial_highlights(ticker: str) -> pd.DataFrame:
     return df
 
 
-def _shorten_text(text: str | None, max_chars: int = 280) -> str | None:
+def _shorten_text(text: str | None, max_chars: int = 180) -> str | None:
     if not text:
         return None
     clean = str(text).strip()
@@ -151,14 +151,26 @@ def get_company_profile(ticker: str) -> dict:
         info = {}
 
     summary = info.get("longBusinessSummary") or info.get("longSummary")
+    # CEO detection prioritizes officers with a CEO title, otherwise falls back to info fields
+    ceo_name = None
+    officers = info.get("companyOfficers") or []
+    for officer in officers:
+        title = str(officer.get("title") or "").lower()
+        if "ceo" in title or "chief executive" in title:
+            ceo_name = officer.get("name")
+            break
+    ceo_name = ceo_name or info.get("companyCEO") or info.get("ceo")
+
     return {
         "name": info.get("shortName") or info.get("longName") or ticker,
         "summary": summary,
-        "summary_short": _shorten_text(summary, 240),
+        "summary_short": _shorten_text(summary, 160),
         "sector": info.get("sector"),
         "industry": info.get("industry"),
         "website": info.get("website"),
         "logo_url": info.get("logo_url") or info.get("logoUrl"),
+        "ceo": ceo_name,
+        "employees": info.get("fullTimeEmployees"),
     }
 
 

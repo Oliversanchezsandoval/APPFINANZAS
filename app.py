@@ -153,17 +153,16 @@ if mod == "Consulta de Acciones":
             profile = get_company_profile(ticker)
             news = get_latest_news(ticker)
 
-            profile_col, news_col = st.columns([3, 2])
-            with profile_col:
-                st.markdown("**Perfil de la empresa**")
-                name = profile.get("name") or ticker
-                logo = profile.get("logo_url")
-                summary = profile.get("summary_short") or profile.get("summary")
+            name = profile.get("name") or ticker
+            logo = profile.get("logo_url")
+            summary = profile.get("summary_short") or profile.get("summary")
 
+            profile_card = st.container()
+            with profile_card:
                 top = st.columns([1, 4])
                 with top[0]:
                     if logo:
-                        st.image(logo, width=96)
+                        st.image(logo, width=88)
                 with top[1]:
                     st.markdown(f"### {name}")
                     meta_parts = []
@@ -176,13 +175,35 @@ if mod == "Consulta de Acciones":
                     if profile.get("website"):
                         st.markdown(f"[Sitio web]({profile['website']})")
 
+                    ceo_line = []
+                    if profile.get("ceo"):
+                        ceo_line.append(f"CEO: {profile['ceo']}")
+                    if profile.get("employees"):
+                        ceo_line.append(f"Empleados: {int(profile['employees']):,}".replace(",", "."))
+                    if ceo_line:
+                        st.caption(" · ".join(ceo_line))
+
+                brief_lines = []
                 if summary:
-                    st.write(summary)
+                    brief_lines.append(summary)
+                else:
+                    short_meta = []
+                    if profile.get("sector"):
+                        short_meta.append(profile["sector"])
+                    if profile.get("industry"):
+                        short_meta.append(profile["industry"])
+                    if profile.get("ceo"):
+                        short_meta.append(f"CEO: {profile['ceo']}")
+                    if short_meta:
+                        brief_lines.append(" · ".join(short_meta))
+
+                if brief_lines:
+                    st.write(" ".join(brief_lines))
                 else:
                     st.info("No se encontró una descripción breve para esta empresa.")
 
-            with news_col:
-                st.markdown("**Última noticia (Yahoo Finance)**")
+                st.markdown("---")
+                st.markdown("**Yahoo Finance – Noticia reciente**")
                 if news:
                     title = news.get("title") or "Noticia reciente"
                     link = news.get("link")
@@ -190,13 +211,14 @@ if mod == "Consulta de Acciones":
                     ts = news.get("published")
                     date_str = ts.strftime("%Y-%m-%d %H:%M") if pd.notnull(ts) else None
 
+                    if publisher or date_str:
+                        meta = " · ".join([p for p in [publisher, date_str] if p])
+                        st.caption(meta)
+
                     if link:
                         st.markdown(f"[{title}]({link})")
                     else:
                         st.write(title)
-                    if publisher or date_str:
-                        meta = " · ".join([p for p in [publisher, date_str] if p])
-                        st.caption(meta)
                 else:
                     st.info("No se encontraron noticias recientes para este ticker.")
 
