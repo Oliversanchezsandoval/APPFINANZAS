@@ -159,68 +159,74 @@ if mod == "Consulta de Acciones":
 
             profile_card = st.container()
             with profile_card:
-                top = st.columns([1, 4])
-                with top[0]:
-                    if logo:
-                        st.image(logo, width=88)
-                with top[1]:
-                    st.markdown(f"### {name}")
-                    meta_parts = []
-                    if profile.get("sector"):
-                        meta_parts.append(profile["sector"])
-                    if profile.get("industry"):
-                        meta_parts.append(profile["industry"])
-                    if meta_parts:
-                        st.caption(" · ".join(meta_parts))
-                    if profile.get("website"):
-                        st.markdown(f"[Sitio web]({profile['website']})")
+                info_col, news_col = st.columns([1.2, 1])
 
-                    ceo_line = []
-                    if profile.get("ceo"):
-                        ceo_line.append(f"CEO: {profile['ceo']}")
-                    if profile.get("employees"):
-                        ceo_line.append(f"Empleados: {int(profile['employees']):,}".replace(",", "."))
-                    if ceo_line:
-                        st.caption(" · ".join(ceo_line))
+                with info_col:
+                    header = st.columns([1, 4])
+                    with header[0]:
+                        if logo:
+                            st.image(logo, width=88)
+                    with header[1]:
+                        st.markdown(f"### {name}")
+                        meta_parts = []
+                        if profile.get("sector"):
+                            meta_parts.append(profile["sector"])
+                        if profile.get("industry"):
+                            meta_parts.append(profile["industry"])
+                        if meta_parts:
+                            st.caption(" · ".join(meta_parts))
+                        if profile.get("website"):
+                            st.markdown(f"[Sitio web]({profile['website']})")
 
-                brief_lines = []
-                if summary:
-                    brief_lines.append(summary)
-                else:
-                    short_meta = []
-                    if profile.get("sector"):
-                        short_meta.append(profile["sector"])
-                    if profile.get("industry"):
-                        short_meta.append(profile["industry"])
-                    if profile.get("ceo"):
-                        short_meta.append(f"CEO: {profile['ceo']}")
-                    if short_meta:
-                        brief_lines.append(" · ".join(short_meta))
+                        ceo_line = []
+                        if profile.get("ceo"):
+                            ceo_line.append(f"CEO: {profile['ceo']}")
+                        if profile.get("employees"):
+                            ceo_line.append(f"Empleados: {int(profile['employees']):,}".replace(",", "."))
+                        if ceo_line:
+                            st.caption(" · ".join(ceo_line))
 
-                if brief_lines:
-                    st.write(" ".join(brief_lines))
-                else:
-                    st.info("No se encontró una descripción breve para esta empresa.")
-
-                st.markdown("---")
-                st.markdown("**Yahoo Finance – Noticia reciente**")
-                if news:
-                    title = news.get("title") or "Noticia reciente"
-                    link = news.get("link")
-                    publisher = news.get("publisher")
-                    ts = news.get("published")
-                    date_str = ts.strftime("%Y-%m-%d %H:%M") if pd.notnull(ts) else None
-
-                    if publisher or date_str:
-                        meta = " · ".join([p for p in [publisher, date_str] if p])
-                        st.caption(meta)
-
-                    if link:
-                        st.markdown(f"[{title}]({link})")
+                    st.markdown("**Descripción breve**")
+                    if summary:
+                        st.write(summary)
                     else:
-                        st.write(title)
-                else:
-                    st.info("No se encontraron noticias recientes para este ticker.")
+                        fallback = []
+                        if profile.get("sector"):
+                            fallback.append(profile["sector"])
+                        if profile.get("industry"):
+                            fallback.append(profile["industry"])
+                        if profile.get("ceo"):
+                            fallback.append(f"CEO: {profile['ceo']}")
+                        if fallback:
+                            st.write(" · ".join(fallback))
+                        else:
+                            st.info("No se encontró una descripción breve para esta empresa.")
+
+                with news_col:
+                    st.markdown("**Yahoo Finance – Noticia reciente**")
+                    if news:
+                        title = news.get("title") or "Noticia reciente"
+                        link = news.get("link")
+                        publisher = news.get("publisher")
+                        ts = news.get("published")
+                        date_str = ts.strftime("%Y-%m-%d %H:%M") if pd.notnull(ts) else None
+                        summary_text = news.get("summary")
+
+                        if publisher or date_str:
+                            meta = " · ".join([p for p in [publisher, date_str] if p])
+                            st.caption(meta)
+
+                        if link:
+                            st.markdown(f"**[{title}]({link})**")
+                        else:
+                            st.markdown(f"**{title}**")
+
+                        if summary_text:
+                            st.write(summary_text)
+                        elif not link:
+                            st.info("No se encontró el detalle de la nota.")
+                    else:
+                        st.info("No se encontraron noticias recientes para este ticker.")
 
             # Análisis de riesgo
             st.subheader("Riesgo de la acción")

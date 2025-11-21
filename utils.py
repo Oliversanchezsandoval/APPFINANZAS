@@ -186,11 +186,20 @@ def get_latest_news(ticker: str) -> dict | None:
         return None
 
     first = items[0] or {}
+
+    # Some providers include a summary/description; keep the richest available
+    summary = (
+        first.get("summary")
+        or first.get("content")
+        or first.get("description")
+        or first.get("body")
+    )
     return {
         "title": first.get("title"),
         "link": first.get("link"),
         "publisher": first.get("publisher"),
         "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
+        "summary": summary,
     }
 
 def rebase_to_100(df: pd.DataFrame) -> pd.DataFrame:
