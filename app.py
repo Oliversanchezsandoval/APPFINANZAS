@@ -487,9 +487,11 @@ if mod == "Consulta de Acciones":
         else:
             st.info("No fue posible cargar datos para la comparación.")
 
-    except Exception as exc:
-        st.error("Ocurrió un error al renderizar la consulta de acciones. Intenta nuevamente en un momento.")
-        st.exception(exc)
+    except Exception:
+        st.error(
+            "Ocurrió un error al renderizar la consulta de acciones. Intenta nuevamente en un momento."
+        )
+        st.stop()
 
 # --- MÓDULO 2: Portafolio / Simulador de Compras ---
 elif mod == "Portafolio / Simulador de Compras":
@@ -615,9 +617,9 @@ elif mod == "Portafolio / Simulador de Compras":
         else:
             st.info("Selecciona al menos un ticker para continuar.")
 
-    except Exception as exc:
+    except Exception:
         st.error("Ocurrió un error en el simulador de portafolio. Intenta nuevamente.")
-        st.exception(exc)
+        st.stop()
 
 # --- MÓDULO 3: Análisis CAPM ---
 elif mod == "Análisis CAPM":
@@ -724,9 +726,9 @@ elif mod == "Análisis CAPM":
                     safe_update_layout(roll_fig, height=380, margin=dict(l=10, r=10, t=10, b=10))
                     st.plotly_chart(apply_elegant_layout(roll_fig), use_container_width=True)
     
-    except Exception as exc:
+    except Exception:
         st.error("Ocurrió un error en el análisis CAPM. Intenta nuevamente.")
-        st.exception(exc)
+        st.stop()
 # --- MÓDULO 4: Portafolio Óptimo (Markowitz) ---
 elif mod == "Portafolio Óptimo (Markowitz)":
     try:
@@ -788,6 +790,6 @@ elif mod == "Portafolio Óptimo (Markowitz)":
                 )
                 safe_update_layout(series_fig, height=420, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(apply_elegant_layout(series_fig), use_container_width=True)
-    except Exception as exc:
+    except Exception:
         st.error("Ocurrió un error en el módulo de Markowitz. Intenta nuevamente.")
-        st.exception(exc)
+        st.stop()
