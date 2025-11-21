@@ -8,7 +8,7 @@ import plotly.express as px
 
 
 # Cambia la constante para invalidar cachés cuando se agregan filtros/limpieza nuevos
-CACHE_BUSTER = "rl_guard_v3"
+CACHE_BUSTER = "rl_guard_v4"
 
 
 # =========================
@@ -183,7 +183,7 @@ def load_multi_prices(tickers, period="1y", interval="1d", _cache_buster=CACHE_B
 def get_financial_highlights(ticker: str, _cache_buster=CACHE_BUSTER) -> pd.DataFrame:
     try:
         t = yf.Ticker(ticker)
-        fast = getattr(t, "fast_info", {}) or {}
+        fast = drop_if_rate_limited(getattr(t, "fast_info", {}) or {}, {})
 
         def get_attr(obj, key, default=None):
             try:
@@ -193,7 +193,7 @@ def get_financial_highlights(ticker: str, _cache_buster=CACHE_BUSTER) -> pd.Data
 
         info = {}
         try:
-            info = t.info or {}
+            info = drop_if_rate_limited(t.info or {}, {})
         except Exception:
             info = {}
 
@@ -310,6 +310,14 @@ def strip_rate_limit_text(text: str | None) -> str | None:
     return _normalize_news_field(text) if text is not None else None
 
 
+def drop_if_rate_limited(payload, fallback=None):
+    """Return fallback if the payload contains rate-limit markers."""
+
+    if _payload_has_rate_limit(payload):
+        return fallback
+    return payload
+
+
 def compute_drawdown_episodes(perf_series: pd.Series):
     """Return drawdown, running max and detailed drawdown/recovery episodes."""
 
@@ -383,11 +391,11 @@ def get_company_profile(ticker: str, _cache_buster=CACHE_BUSTER) -> dict:
 
         info = {}
         try:
-            info = t.info or {}
+            info = drop_if_rate_limited(t.info or {}, {})
         except Exception:
             info = {}
 
-        if _payload_has_rate_limit(info):
+        if not info or _payload_has_rate_limit(info):
             return _placeholder_profile(ticker)
 
         summary = strip_rate_limit_text(info.get("longBusinessSummary") or info.get("longSummary"))
@@ -433,31 +441,36 @@ def get_latest_news(ticker: str, _cache_buster=CACHE_BUSTER) -> dict | None:
     if not items:
         return None
 
-    first = items[0] or {}
+    # Iterar hasta encontrar una nota limpia
+    cleaned = None
+    for candidate in items:
+        first = candidate or {}
+        if _payload_has_rate_limit(first):
+            continue
 
-    if _payload_has_rate_limit(first):
-        return None
+        # Some providers include a summary/description; keep the richest available
+        summary = strip_rate_limit_text(
+            first.get("summary")
+            or first.get("content")
+            or first.get("description")
+            or first.get("body")
+        )
+        title = strip_rate_limit_text(first.get("title")) or "Noticia reciente"
+        summary = summary or "No se encontró el cuerpo de la nota."
 
-    # Some providers include a summary/description; keep the richest available
-    summary = strip_rate_limit_text(
-        first.get("summary")
-        or first.get("content")
-        or first.get("description")
-        or first.get("body")
-    )
-    title = strip_rate_limit_text(first.get("title")) or "Noticia reciente"
-    summary = summary or "No se encontró el cuerpo de la nota."
+        if _looks_like_rate_limit(title) or _looks_like_rate_limit(summary):
+            continue
 
-    if _looks_like_rate_limit(title) or _looks_like_rate_limit(summary):
-        return None
+        cleaned = {
+            "title": title,
+            "link": first.get("link"),
+            "publisher": first.get("publisher"),
+            "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
+            "summary": summary,
+        }
+        break
 
-    return {
-        "title": title,
-        "link": first.get("link"),
-        "publisher": first.get("publisher"),
-        "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
-        "summary": summary,
-    }
+    return cleaned
 
 def rebase_to_100(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy().dropna(how="all")
