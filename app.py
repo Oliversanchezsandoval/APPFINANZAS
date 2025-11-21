@@ -56,12 +56,14 @@ def render_export_controls(fig, data: pd.DataFrame | pd.Series, prefix: str):
             csv_bytes = None
 
     png_bytes = fig_to_png(fig)
+    if not isinstance(png_bytes, (bytes, bytearray)):
+        png_bytes = None
 
     b1, b2 = st.columns(2)
     with b1:
         st.download_button(
             "Exportar gráfica (PNG)",
-            data=png_bytes,
+            data=png_bytes or b"",
             file_name=f"{prefix}.png",
             mime="image/png",
             disabled=png_bytes is None,
@@ -69,7 +71,7 @@ def render_export_controls(fig, data: pd.DataFrame | pd.Series, prefix: str):
     with b2:
         st.download_button(
             "Exportar datos filtrados (CSV)",
-            data=csv_bytes,
+            data=csv_bytes or b"",
             file_name=f"{prefix}.csv",
             mime="text/csv",
             disabled=csv_bytes is None,
