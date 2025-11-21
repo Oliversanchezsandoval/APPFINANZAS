@@ -129,40 +129,41 @@ if mod == "Consulta de Acciones":
         if df is None or df.empty:
             st.error("No se pudieron obtener datos del ticker. Verifica el símbolo o intenta con otro periodo/intervalo (p. ej. 1y y 1d).")
         else:
-            # Candlestick chart
-            st.subheader(f"Gráfica de velas: {ticker}")
-            fig = go.Figure(
-                data=[
-                    go.Candlestick(
-                        x=df.index,
-                        open=df["Open"],
-                        high=df["High"],
-                        low=df["Low"],
-                        close=df["Close"],
-                        name=ticker,
-                        increasing=dict(
-                            line=dict(color=PRIMARY_COLOR),
-                            fillcolor=PRIMARY_COLOR,
-                        ),
-                        decreasing=dict(
-                            line=dict(color=ACCENT_COLOR),
-                            fillcolor=ACCENT_COLOR,
-                        ),
-                    )
-                ]
-            )
-            fig.update_xaxes(title_text="Fecha", rangeslider_visible=False)
-            fig.update_yaxes(title_text="Precio")
-            safe_update_layout(
-                fig,
-                height=520,
-                margin=dict(l=10, r=10, t=40, b=10),
-                increasing_line_color="#0f4c75",
-                increasing_fillcolor="#0f4c75",
-                decreasing_line_color="#e76f51",
-                decreasing_fillcolor="#e76f51",
-            )
-            st.plotly_chart(apply_elegant_layout(fig), use_container_width=True)
+            price_cols = ["Open", "High", "Low", "Close"]
+            valid_prices = df[price_cols].dropna(how="any") if all(c in df.columns for c in price_cols) else pd.DataFrame()
+            if valid_prices.empty:
+                st.error("No hay datos OHLC válidos para graficar en el periodo seleccionado.")
+            else:
+                # Candlestick chart
+                st.subheader(f"Gráfica de velas: {ticker}")
+                fig = go.Figure(
+                    data=[
+                        go.Candlestick(
+                            x=valid_prices.index,
+                            open=valid_prices["Open"],
+                            high=valid_prices["High"],
+                            low=valid_prices["Low"],
+                            close=valid_prices["Close"],
+                            name=ticker,
+                            increasing=dict(
+                                line=dict(color=PRIMARY_COLOR),
+                                fillcolor=PRIMARY_COLOR,
+                            ),
+                            decreasing=dict(
+                                line=dict(color=ACCENT_COLOR),
+                                fillcolor=ACCENT_COLOR,
+                            ),
+                        )
+                    ]
+                )
+                fig.update_xaxes(title_text="Fecha", rangeslider_visible=False)
+                fig.update_yaxes(title_text="Precio")
+                safe_update_layout(
+                    fig,
+                    height=520,
+                    margin=dict(l=10, r=10, t=40, b=10),
+                )
+                st.plotly_chart(apply_elegant_layout(fig), use_container_width=True)
 
             # Highlights financieros
             st.subheader("Top 10 datos financieros relevantes")
@@ -181,7 +182,7 @@ if mod == "Consulta de Acciones":
                     labels={"value": "Índice (100=Inicio)", "variable": "Ticker"},
                     color_discrete_sequence=COLOR_PALETTE,
                 )
-                line.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
+                safe_update_layout(line, height=420, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(apply_elegant_layout(line), use_container_width=True)
             else:
                 st.info("No fue posible cargar datos para la comparación.")
@@ -224,7 +225,7 @@ elif mod == "Portafolio / Simulador de Compras":
                 labels={"value": "Índice (100=Inicio)", "variable": "Ticker"},
                 color_discrete_sequence=COLOR_PALETTE,
             )
-            fig_line.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
+            safe_update_layout(fig_line, height=420, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(apply_elegant_layout(fig_line), use_container_width=True)
 
             st.markdown("---")
@@ -286,7 +287,7 @@ elif mod == "Portafolio / Simulador de Compras":
                     title="Distribución por valor",
                     color_discrete_sequence=COLOR_PALETTE,
                 )
-                pie.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10))
+                safe_update_layout(pie, height=420, margin=dict(l=10, r=10, t=30, b=10))
                 st.plotly_chart(apply_elegant_layout(pie), use_container_width=True)
 
                 # Evolución hipotética (buy & hold)
@@ -302,7 +303,7 @@ elif mod == "Portafolio / Simulador de Compras":
                     labels={"value": "Índice (100=Inicio)"},
                     color_discrete_sequence=COLOR_PALETTE,
                 )
-                comp_fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
+                safe_update_layout(comp_fig, height=420, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(apply_elegant_layout(comp_fig), use_container_width=True)
     else:
         st.info("Selecciona al menos un ticker para continuar.")
@@ -351,7 +352,7 @@ elif mod == "Análisis CAPM":
                 go.Scatter(x=x_line, y=y_line, mode="lines", name=f"Ri = {a:.4f} + {b:.4f}·Rm")
             )
             scatter.update_traces(marker=dict(size=6, opacity=0.7), selector=dict(mode="markers"))
-            scatter.update_layout(height=520, margin=dict(l=10, r=10, t=10, b=10))
+            safe_update_layout(scatter, height=520, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(apply_elegant_layout(scatter), use_container_width=True)
 
             # Métricas
@@ -388,7 +389,8 @@ elif mod == "Análisis CAPM":
                     marker=dict(size=10, color=COLOR_PALETTE[4]),
                 )
             )
-            sml_fig.update_layout(
+            safe_update_layout(
+                sml_fig,
                 xaxis_title="Beta",
                 yaxis_title="Rendimiento esperado anual (%)",
                 height=460,
@@ -405,7 +407,7 @@ elif mod == "Análisis CAPM":
                     labels={"value": "Beta", "index": "Fecha"},
                     color_discrete_sequence=[COLOR_PALETTE[1]],
                 )
-                roll_fig.update_layout(height=380, margin=dict(l=10, r=10, t=10, b=10))
+                safe_update_layout(roll_fig, height=380, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(apply_elegant_layout(roll_fig), use_container_width=True)
 
 # --- MÓDULO 4: Portafolio Óptimo (Markowitz) ---
@@ -450,7 +452,7 @@ elif mod == "Portafolio Óptimo (Markowitz)":
                     mode="markers+text", text=[name], textposition="top center",
                     marker=dict(size=12, symbol="star")
                 ))
-            dot.update_layout(height=520, margin=dict(l=10, r=10, t=10, b=10))
+            safe_update_layout(dot, height=520, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(apply_elegant_layout(dot), use_container_width=True)
 
             st.markdown("### Pesos del **Tangency** (máx. Sharpe)")
@@ -464,5 +466,5 @@ elif mod == "Portafolio Óptimo (Markowitz)":
                 labels={"value": "Índice (100=Inicio)", "variable": "Cartera"},
                 color_discrete_sequence=COLOR_PALETTE,
             )
-            series_fig.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
+            safe_update_layout(series_fig, height=420, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(apply_elegant_layout(series_fig), use_container_width=True)
