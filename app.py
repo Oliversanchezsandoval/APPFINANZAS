@@ -34,6 +34,48 @@ COLOR_PALETTE = [
 ]
 
 
+def fig_to_png(fig):
+    """Return PNG bytes for a Plotly figure using kaleido, or None if unavailable."""
+
+    try:
+        return fig.to_image(format="png", engine="kaleido")
+    except Exception:
+        return None
+
+
+def render_export_controls(fig, data: pd.DataFrame | pd.Series, prefix: str):
+    """Render paired download buttons for the active chart and its filtered data."""
+
+    csv_bytes = None
+    if data is not None:
+        if isinstance(data, pd.Series):
+            data = data.to_frame()
+        try:
+            csv_bytes = data.to_csv(index=True).encode("utf-8")
+        except Exception:
+            csv_bytes = None
+
+    png_bytes = fig_to_png(fig)
+
+    b1, b2 = st.columns(2)
+    with b1:
+        st.download_button(
+            "Exportar gráfica (PNG)",
+            data=png_bytes,
+            file_name=f"{prefix}.png",
+            mime="image/png",
+            disabled=png_bytes is None,
+        )
+    with b2:
+        st.download_button(
+            "Exportar datos filtrados (CSV)",
+            data=csv_bytes,
+            file_name=f"{prefix}.csv",
+            mime="text/csv",
+            disabled=csv_bytes is None,
+        )
+
+
 def safe_update_layout(fig, **kwargs):
     """Update layout ignoring unsupported keys to avoid Plotly validation errors."""
 
@@ -290,7 +332,9 @@ if mod == "Consulta de Acciones":
                             height=420,
                             margin=dict(l=10, r=10, t=10, b=10),
                         )
-                        st.plotly_chart(apply_elegant_layout(risk_fig), use_container_width=True)
+                        risk_fig = apply_elegant_layout(risk_fig)
+                        st.plotly_chart(risk_fig, use_container_width=True)
+                        render_export_controls(risk_fig, roll_df, f"{ticker}_volatilidad")
 
                 with t2:
                     if drawdown.empty:
@@ -307,7 +351,9 @@ if mod == "Consulta de Acciones":
                             height=420,
                             margin=dict(l=10, r=10, t=10, b=10),
                         )
-                        st.plotly_chart(apply_elegant_layout(dd_fig), use_container_width=True)
+                        dd_fig = apply_elegant_layout(dd_fig)
+                        st.plotly_chart(dd_fig, use_container_width=True)
+                        render_export_controls(dd_fig, drawdown, f"{ticker}_drawdown")
 
             # Comparación vs S&P 500
             st.subheader("Comparativa vs S&P 500 (rebalance a 100)")
@@ -322,7 +368,9 @@ if mod == "Consulta de Acciones":
                     color_discrete_sequence=COLOR_PALETTE,
                 )
                 safe_update_layout(line, height=420, margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(apply_elegant_layout(line), use_container_width=True)
+                line = apply_elegant_layout(line)
+                st.plotly_chart(line, use_container_width=True)
+                render_export_controls(line, rebased, f"{ticker}_comparativa")
             else:
                 st.info("No fue posible cargar datos para la comparación.")
 
