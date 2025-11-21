@@ -62,6 +62,24 @@ def _generate_placeholder_history(ticker: str, period="6mo", interval="1d") -> p
     df.attrs["placeholder"] = True
     return df
 
+
+def _placeholder_profile(ticker: str) -> dict:
+    """Fallback de perfil para entornos sin conexión o respuestas vacías de Yahoo."""
+
+    clean = (ticker or "").upper() or "TCKR"
+    return {
+        "name": clean,
+        "summary": "Perfil no disponible temporalmente.",
+        "summary_short": "Perfil no disponible temporalmente.",
+        "sector": None,
+        "industry": None,
+        "website": None,
+        "logo_url": None,
+        "ceo": None,
+        "employees": None,
+        "placeholder": True,
+    }
+
 # =========================
 # Descarga de datos robusta
 # =========================
@@ -127,23 +145,23 @@ def load_multi_prices(tickers, period="1y", interval="1d"):
                     adj = data.xs("Adj Close", axis=1, level=-1)
                 elif "Close" in data.columns.get_level_values(0):
                     adj = data["Close"]
-                else:
+                elif "Close" in data.columns.get_level_values(-1):
                     adj = data.xs("Close", axis=1, level=-1, drop_level=True)
             else:
                 if "Adj Close" in data.columns:
                     adj = data["Adj Close"]
                 elif "Close" in data.columns:
                     adj = data["Close"]
-                else:
-                    return None
 
-            if isinstance(adj, pd.Series):
-                name = tickers if isinstance(tickers, str) else (tickers[0] if tickers else "PX")
-                adj = adj.to_frame(name=name)
+            if adj is not None:
+                if isinstance(adj, pd.Series):
+                    name = tickers if isinstance(tickers, str) else (tickers[0] if tickers else "PX")
+                    adj = adj.to_frame(name=name)
 
-            adj = adj.dropna(how="all").sort_index()
-            adj.index = pd.to_datetime(adj.index).tz_localize(None)
-            return adj
+                adj = adj.dropna(how="all").sort_index()
+                adj.index = pd.to_datetime(adj.index).tz_localize(None)
+                if not adj.empty:
+                    return adj
     except Exception:
         pass
 
@@ -159,42 +177,228 @@ def load_multi_prices(tickers, period="1y", interval="1d"):
 
 @st.cache_data(show_spinner=False)
 def get_financial_highlights(ticker: str) -> pd.DataFrame:
-    t = yf.Ticker(ticker)
-    fast = getattr(t, "fast_info", {}) or {}
-
-    def get_attr(obj, key, default=None):
-        try:
-            return obj.get(key, default)
-        except Exception:
-            return default
-
-    info = {}
     try:
-        info = t.info or {}
-    except Exception:
+        t = yf.Ticker(ticker)
+        fast = getattr(t, "fast_info", {}) or {}
+
+        def get_attr(obj, key, default=None):
+            try:
+                return obj.get(key, default)
+            except Exception:
+                return default
+
         info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            info = {}
 
-    last_price = get_attr(fast, "last_price", None)
-    if last_price is None:
-        px_df = fetch_price_history(ticker, period="1mo", interval="1d")
-        if px_df is not None and not px_df.empty:
-            last_price = float(px_df["Close"].iloc[-1])
+        last_price = get_attr(fast, "last_price", None)
+        if last_price is None:
+            px_df = fetch_price_history(ticker, period="1mo", interval="1d")
+            if px_df is not None and not px_df.empty:
+                last_price = float(px_df["Close"].iloc[-1])
 
-    metrics = {
-        "Precio": last_price,
-        "Market Cap": get_attr(fast, "market_cap", info.get("marketCap")),
-        "P/E (TTM)": info.get("trailingPE"),
-        "EPS (TTM)": info.get("trailingEps"),
-        "Dividend Yield": info.get("dividendYield"),
-        "Beta": info.get("beta"),
-        "52w Alto": info.get("fiftyTwoWeekHigh"),
-        "52w Bajo": info.get("fiftyTwoWeekLow"),
-        "Ingresos (ttm)": info.get("totalRevenue"),
-        "Utilidad neta (ttm)": info.get("netIncomeToCommon"),
-    }
+        metrics = {
+            "Precio": last_price,
+            "Market Cap": get_attr(fast, "market_cap", info.get("marketCap")),
+            "P/E (TTM)": info.get("trailingPE"),
+            "EPS (TTM)": info.get("trailingEps"),
+            "Dividend Yield": info.get("dividendYield"),
+            "Beta": info.get("beta"),
+            "52w Alto": info.get("fiftyTwoWeekHigh"),
+            "52w Bajo": info.get("fiftyTwoWeekLow"),
+            "Ingresos (ttm)": info.get("totalRevenue"),
+            "Utilidad neta (ttm)": info.get("netIncomeToCommon"),
+        }
+    except Exception:
+        metrics = {
+            "Precio": None,
+            "Market Cap": None,
+            "P/E (TTM)": None,
+            "EPS (TTM)": None,
+            "Dividend Yield": None,
+            "Beta": None,
+            "52w Alto": None,
+            "52w Bajo": None,
+            "Ingresos (ttm)": None,
+            "Utilidad neta (ttm)": None,
+        }
 
     df = pd.DataFrame({"Métrica": list(metrics.keys()), "Valor": list(metrics.values())})
     return df
+
+
+def _shorten_text(text: str | None, max_chars: int = 180) -> str | None:
+    if not text:
+        return None
+    clean = str(text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    snippet = clean[:max_chars].rsplit(" ", 1)[0]
+    return snippet + "…"
+
+
+def _normalize_news_field(value) -> str | None:
+    """Normalize news text fields to clean, plain strings."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join([str(v) for v in value if v])
+    elif isinstance(value, dict):
+        # Prefer common text-bearing keys if a dict is provided
+        for key in ("content", "body", "summary", "description", "title"):
+            if key in value and value[key]:
+                value = value[key]
+                break
+        else:
+            value = str(value)
+
+    text = html.unescape(str(value))
+    # Remove HTML tags and collapse whitespace
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+def compute_drawdown_episodes(perf_series: pd.Series):
+    """Return drawdown, running max and detailed drawdown/recovery episodes."""
+
+    if perf_series is None:
+        return None, None, []
+
+    series = perf_series.dropna()
+    if series.empty:
+        return series, series, []
+
+    running_max = series.cummax()
+    drawdown = series / running_max - 1
+
+    episodes = []
+    in_dd = False
+    start = trough = None
+    trough_val = 0.0
+
+    for date, dd in drawdown.items():
+        if not in_dd and dd < 0:
+            in_dd = True
+            start = date
+            trough = date
+            trough_val = float(dd)
+
+        if in_dd:
+            if dd < trough_val:
+                trough_val = float(dd)
+                trough = date
+
+            if dd >= 0:
+                peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+                trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+                rec_ts = pd.to_datetime(date)
+                episodes.append(
+                    {
+                        "peak": peak_ts,
+                        "trough": trough_ts,
+                        "recovery": rec_ts,
+                        "depth": trough_val,
+                        "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                        "days_to_recover": (rec_ts - peak_ts).days if pd.notnull(rec_ts) else None,
+                    }
+                )
+                in_dd = False
+                start = trough = None
+                trough_val = 0.0
+
+    if in_dd:
+        peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+        trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+        episodes.append(
+            {
+                "peak": peak_ts,
+                "trough": trough_ts,
+                "recovery": None,
+                "depth": trough_val,
+                "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                "days_to_recover": None,
+            }
+        )
+
+    return drawdown, running_max, episodes
+
+
+@st.cache_data(show_spinner=False)
+def get_company_profile(ticker: str) -> dict:
+    """Return basic company profile details, short description and logo for a ticker."""
+    try:
+        t = yf.Ticker(ticker)
+
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            info = {}
+
+        summary = info.get("longBusinessSummary") or info.get("longSummary")
+        # CEO detection prioritizes officers with a CEO title, otherwise falls back to info fields
+        ceo_name = None
+        officers = info.get("companyOfficers") or []
+        for officer in officers:
+            title = str(officer.get("title") or "").lower()
+            if "ceo" in title or "chief executive" in title:
+                ceo_name = officer.get("name")
+                break
+        ceo_name = ceo_name or info.get("companyCEO") or info.get("ceo")
+
+        profile = {
+            "name": info.get("shortName") or info.get("longName") or ticker,
+            "summary": summary,
+            "summary_short": _shorten_text(summary, 160),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "website": info.get("website"),
+            "logo_url": info.get("logo_url") or info.get("logoUrl"),
+            "ceo": ceo_name,
+            "employees": info.get("fullTimeEmployees"),
+            "placeholder": False,
+        }
+
+        # Si todo está vacío, devolver un placeholder legible en lugar de None general
+        if all(v is None for k, v in profile.items() if k not in ("name", "placeholder")):
+            return _placeholder_profile(ticker)
+        return profile
+    except Exception:
+        return _placeholder_profile(ticker)
+
+
+@st.cache_data(show_spinner=False)
+def get_latest_news(ticker: str) -> dict | None:
+    """Return the latest available news item for a ticker from Yahoo Finance."""
+    try:
+        items = yf.Ticker(ticker).news or []
+    except Exception:
+        items = []
+
+    if not items:
+        return None
+
+    first = items[0] or {}
+
+    # Some providers include a summary/description; keep the richest available
+    summary = _normalize_news_field(
+        first.get("summary")
+        or first.get("content")
+        or first.get("description")
+        or first.get("body")
+    )
+    return {
+        "title": _normalize_news_field(first.get("title")) or "Noticia reciente",
+        "link": first.get("link"),
+        "publisher": first.get("publisher"),
+        "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
+        "summary": summary or "No se encontró el cuerpo de la nota.",
+    }
 
 
 def _shorten_text(text: str | None, max_chars: int = 180) -> str | None:
