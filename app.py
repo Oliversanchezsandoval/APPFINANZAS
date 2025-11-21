@@ -129,46 +129,75 @@ if mod == "Consulta de Acciones":
         if df is None or df.empty:
             st.error("No se pudieron obtener datos del ticker. Verifica el símbolo o intenta con otro periodo/intervalo (p. ej. 1y y 1d).")
         else:
-            price_cols = ["Open", "High", "Low", "Close"]
-            valid_prices = df[price_cols].dropna(how="any") if all(c in df.columns for c in price_cols) else pd.DataFrame()
-            if valid_prices.empty:
-                st.error("No hay datos OHLC válidos para graficar en el periodo seleccionado.")
-            else:
-                # Candlestick chart
-                st.subheader(f"Gráfica de velas: {ticker}")
-                fig = go.Figure(
-                    data=[
-                        go.Candlestick(
-                            x=valid_prices.index,
-                            open=valid_prices["Open"],
-                            high=valid_prices["High"],
-                            low=valid_prices["Low"],
-                            close=valid_prices["Close"],
-                            name=ticker,
-                            increasing=dict(
-                                line=dict(color=PRIMARY_COLOR),
-                                fillcolor=PRIMARY_COLOR,
-                            ),
-                            decreasing=dict(
-                                line=dict(color=ACCENT_COLOR),
-                                fillcolor=ACCENT_COLOR,
-                            ),
-                        )
-                    ]
-                )
-                fig.update_xaxes(title_text="Fecha", rangeslider_visible=False)
-                fig.update_yaxes(title_text="Precio")
-                safe_update_layout(
-                    fig,
-                    height=520,
-                    margin=dict(l=10, r=10, t=40, b=10),
-                )
-                st.plotly_chart(apply_elegant_layout(fig), use_container_width=True)
-
             # Highlights financieros
             st.subheader("Top 10 datos financieros relevantes")
             highlights = get_financial_highlights(ticker)
             st.dataframe(highlights, use_container_width=True)
+
+            # Análisis de riesgo
+            st.subheader("Riesgo de la acción")
+            price_col = "Adj Close" if "Adj Close" in df.columns else "Close"
+            price_series = df[price_col].dropna()
+            returns = price_series.pct_change().dropna()
+
+            ann_map = {"1d": 252, "1wk": 52, "1mo": 12}
+            ann_factor = ann_map.get(interval, 252)
+            freq_label = {"1d": "diario", "1wk": "semanal", "1mo": "mensual"}.get(interval, "diario")
+
+            if returns.empty:
+                st.warning("No hay suficientes datos para calcular métricas de riesgo en este periodo.")
+            else:
+                ann_vol = returns.std() * np.sqrt(ann_factor)
+                var_95 = returns.quantile(0.05)
+                cvar_95 = returns[returns <= var_95].mean() if (returns <= var_95).any() else np.nan
+
+                rolling_window = 20 if interval == "1d" else 12
+                roll_vol = returns.rolling(rolling_window).std() * np.sqrt(ann_factor)
+
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Volatilidad anualizada", f"{ann_vol*100:.2f}%")
+                m2.metric(f"VaR 95% ({freq_label})", f"{var_95*100:.2f}%")
+                m3.metric(f"CVaR 95% ({freq_label})", f"{cvar_95*100:.2f}%")
+
+                roll_df = roll_vol.dropna().to_frame("Volatilidad")
+                perf_curve = (1 + returns).cumprod()
+                running_max = perf_curve.cummax()
+                drawdown = (perf_curve / running_max - 1).rename("Drawdown")
+
+                t1, t2 = st.tabs(["Volatilidad móvil", "Caídas máximas"])
+
+                with t1:
+                    if roll_df.empty:
+                        st.info("Aún no hay suficientes observaciones para mostrar la volatilidad móvil.")
+                    else:
+                        risk_fig = px.line(
+                            roll_df,
+                            labels={"index": "Fecha", "Volatilidad": "Volatilidad (anualizada)"},
+                            color_discrete_sequence=[PRIMARY_COLOR],
+                        )
+                        safe_update_layout(
+                            risk_fig,
+                            height=420,
+                            margin=dict(l=10, r=10, t=10, b=10),
+                        )
+                        st.plotly_chart(apply_elegant_layout(risk_fig), use_container_width=True)
+
+                with t2:
+                    if drawdown.empty:
+                        st.info("Sin suficientes datos para estimar drawdowns.")
+                    else:
+                        dd_fig = px.area(
+                            drawdown.to_frame(),
+                            labels={"index": "Fecha", "Drawdown": "Drawdown"},
+                            color_discrete_sequence=[ACCENT_COLOR],
+                        )
+                        dd_fig.update_yaxes(tickformat=".0%", range=[drawdown.min(), 0])
+                        safe_update_layout(
+                            dd_fig,
+                            height=420,
+                            margin=dict(l=10, r=10, t=10, b=10),
+                        )
+                        st.plotly_chart(apply_elegant_layout(dd_fig), use_container_width=True)
 
             # Comparación vs S&P 500
             st.subheader("Comparativa vs S&P 500 (rebalance a 100)")
