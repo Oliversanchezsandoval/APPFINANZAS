@@ -149,6 +149,10 @@ if mod == "Consulta de Acciones":
                 xaxis_rangeslider_visible=False,
                 height=520,
                 margin=dict(l=10, r=10, t=40, b=10),
+                increasing_line_color="#0f4c75",
+                increasing_fillcolor="#0f4c75",
+                decreasing_line_color="#e76f51",
+                decreasing_fillcolor="#e76f51",
             )
             st.plotly_chart(apply_elegant_layout(fig), use_container_width=True)
 
