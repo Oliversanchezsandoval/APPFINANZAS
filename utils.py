@@ -128,6 +128,46 @@ def get_financial_highlights(ticker: str) -> pd.DataFrame:
     df = pd.DataFrame({"Métrica": list(metrics.keys()), "Valor": list(metrics.values())})
     return df
 
+
+@st.cache_data(show_spinner=False)
+def get_company_profile(ticker: str) -> dict:
+    """Return basic company profile details and description for a ticker."""
+    t = yf.Ticker(ticker)
+
+    info = {}
+    try:
+        info = t.info or {}
+    except Exception:
+        info = {}
+
+    return {
+        "name": info.get("shortName") or info.get("longName") or ticker,
+        "summary": info.get("longBusinessSummary") or info.get("longSummary"),
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "website": info.get("website"),
+    }
+
+
+@st.cache_data(show_spinner=False)
+def get_latest_news(ticker: str) -> dict | None:
+    """Return the latest available news item for a ticker from Yahoo Finance."""
+    try:
+        items = yf.Ticker(ticker).news or []
+    except Exception:
+        return None
+
+    if not items:
+        return None
+
+    first = items[0] or {}
+    return {
+        "title": first.get("title"),
+        "link": first.get("link"),
+        "publisher": first.get("publisher"),
+        "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
+    }
+
 def rebase_to_100(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy().dropna(how="all")
     base = df.iloc[0]
