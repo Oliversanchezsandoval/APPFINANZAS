@@ -1,3 +1,5 @@
+import html
+import re
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -139,6 +141,30 @@ def _shorten_text(text: str | None, max_chars: int = 180) -> str | None:
     return snippet + "…"
 
 
+def _normalize_news_field(value) -> str | None:
+    """Normalize news text fields to clean, plain strings."""
+
+    if value is None:
+        return None
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join([str(v) for v in value if v])
+    elif isinstance(value, dict):
+        # Prefer common text-bearing keys if a dict is provided
+        for key in ("content", "body", "summary", "description", "title"):
+            if key in value and value[key]:
+                value = value[key]
+                break
+        else:
+            value = str(value)
+
+    text = html.unescape(str(value))
+    # Remove HTML tags and collapse whitespace
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
 @st.cache_data(show_spinner=False)
 def get_company_profile(ticker: str) -> dict:
     """Return basic company profile details, short description and logo for a ticker."""
@@ -188,14 +214,14 @@ def get_latest_news(ticker: str) -> dict | None:
     first = items[0] or {}
 
     # Some providers include a summary/description; keep the richest available
-    summary = (
+    summary = _normalize_news_field(
         first.get("summary")
         or first.get("content")
         or first.get("description")
         or first.get("body")
     )
     return {
-        "title": first.get("title"),
+        "title": _normalize_news_field(first.get("title")),
         "link": first.get("link"),
         "publisher": first.get("publisher"),
         "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
