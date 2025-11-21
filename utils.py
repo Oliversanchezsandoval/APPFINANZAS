@@ -244,6 +244,18 @@ def _normalize_news_field(value) -> str | None:
 
     if value is None:
         return None
+    clean = str(text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    snippet = clean[:max_chars].rsplit(" ", 1)[0]
+    return snippet + "…"
+
+
+def _normalize_news_field(value) -> str | None:
+    """Normalize news text fields to clean, plain strings."""
+
+    if value is None:
+        return None
 
     if isinstance(value, (list, tuple)):
         value = " ".join([str(v) for v in value if v])
@@ -328,6 +340,106 @@ def compute_drawdown_episodes(perf_series: pd.Series):
     return drawdown, running_max, episodes
 
 
+    if isinstance(value, (list, tuple)):
+        value = " ".join([str(v) for v in value if v])
+    elif isinstance(value, dict):
+        # Prefer common text-bearing keys if a dict is provided
+        for key in ("content", "body", "summary", "description", "title"):
+            if key in value and value[key]:
+                value = value[key]
+                break
+        else:
+            value = str(value)
+
+    text = html.unescape(str(value))
+    # Remove HTML tags and collapse whitespace
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+def _looks_like_rate_limit(text: str | None) -> bool:
+    """Detect common rate-limit or block messages to avoid surfacing them as content."""
+
+    if not text:
+        return False
+    lower = str(text).lower()
+    markers = [
+        "fair-use limits",
+        "blocked by the system",
+        "code: 403",
+        "contact support",
+        "this isn’t supposed to happen",
+        "this isn't supposed to happen",
+    ]
+    return any(m in lower for m in markers)
+
+
+def compute_drawdown_episodes(perf_series: pd.Series):
+    """Return drawdown, running max and detailed drawdown/recovery episodes."""
+
+    if perf_series is None:
+        return None, None, []
+
+    series = perf_series.dropna()
+    if series.empty:
+        return series, series, []
+
+    running_max = series.cummax()
+    drawdown = series / running_max - 1
+
+    episodes = []
+    in_dd = False
+    start = trough = None
+    trough_val = 0.0
+
+    for date, dd in drawdown.items():
+        if not in_dd and dd < 0:
+            in_dd = True
+            start = date
+            trough = date
+            trough_val = float(dd)
+
+        if in_dd:
+            if dd < trough_val:
+                trough_val = float(dd)
+                trough = date
+
+            if dd >= 0:
+                peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+                trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+                rec_ts = pd.to_datetime(date)
+                episodes.append(
+                    {
+                        "peak": peak_ts,
+                        "trough": trough_ts,
+                        "recovery": rec_ts,
+                        "depth": trough_val,
+                        "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                        "days_to_recover": (rec_ts - peak_ts).days if pd.notnull(rec_ts) else None,
+                    }
+                )
+                in_dd = False
+                start = trough = None
+                trough_val = 0.0
+
+    if in_dd:
+        peak_ts = pd.to_datetime(start) if start is not None else pd.NaT
+        trough_ts = pd.to_datetime(trough) if trough is not None else pd.NaT
+        episodes.append(
+            {
+                "peak": peak_ts,
+                "trough": trough_ts,
+                "recovery": None,
+                "depth": trough_val,
+                "days_to_trough": (trough_ts - peak_ts).days if pd.notnull(trough_ts) else None,
+                "days_to_recover": None,
+            }
+        )
+
+    return drawdown, running_max, episodes
+
+
 @st.cache_data(show_spinner=False)
 def get_company_profile(ticker: str) -> dict:
     """Return basic company profile details, short description and logo for a ticker."""
@@ -341,6 +453,8 @@ def get_company_profile(ticker: str) -> dict:
             info = {}
 
         summary = info.get("longBusinessSummary") or info.get("longSummary")
+        if _looks_like_rate_limit(summary):
+            summary = None
         # CEO detection prioritizes officers with a CEO title, otherwise falls back to info fields
         ceo_name = None
         officers = info.get("companyOfficers") or []
@@ -392,12 +506,18 @@ def get_latest_news(ticker: str) -> dict | None:
         or first.get("description")
         or first.get("body")
     )
+    title = _normalize_news_field(first.get("title")) or "Noticia reciente"
+    summary = summary or "No se encontró el cuerpo de la nota."
+
+    if _looks_like_rate_limit(title) or _looks_like_rate_limit(summary):
+        return None
+
     return {
-        "title": _normalize_news_field(first.get("title")) or "Noticia reciente",
+        "title": title,
         "link": first.get("link"),
         "publisher": first.get("publisher"),
         "published": pd.to_datetime(first.get("providerPublishTime"), unit="s", errors="coerce"),
-        "summary": summary or "No se encontró el cuerpo de la nota.",
+        "summary": summary,
     }
 
 def rebase_to_100(df: pd.DataFrame) -> pd.DataFrame:
