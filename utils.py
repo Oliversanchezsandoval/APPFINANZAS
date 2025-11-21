@@ -6,6 +6,62 @@ import numpy as np
 import yfinance as yf
 import plotly.express as px
 
+
+# =========================
+# Utilidades de respaldo
+# =========================
+
+
+def _estimate_period_rows(period: str, interval: str) -> int:
+    """Devuelve un número aproximado de observaciones según periodo/intervalo."""
+
+    period_map = {
+        "1mo": 22,
+        "3mo": 66,
+        "6mo": 126,
+        "1y": 252,
+        "2y": 504,
+        "5y": 1260,
+        "10y": 2520,
+        "max": 2520,
+    }
+    base = period_map.get(period, 252)
+    if interval == "1wk":
+        return max(10, base // 5)
+    if interval == "1mo":
+        return max(6, base // 22)
+    return max(20, base)
+
+
+def _generate_placeholder_history(ticker: str, period="6mo", interval="1d") -> pd.DataFrame:
+    """Genera una serie OHLC sintética para mantener la app operativa sin datos reales."""
+
+    n = _estimate_period_rows(period, interval)
+    freq = {"1d": "B", "1wk": "W-FRI", "1mo": "M"}.get(interval, "B")
+    idx = pd.date_range(end=pd.Timestamp.today().normalize(), periods=n, freq=freq)
+
+    rng = np.random.default_rng(abs(hash(ticker)) % (2**32))
+    rets = rng.normal(0.0005, 0.02 if interval == "1d" else 0.04, size=n)
+    price = 100 * (1 + pd.Series(rets, index=idx)).cumprod()
+
+    noise = rng.normal(0.0, 0.008, size=n)
+    high = price * (1 + np.abs(noise))
+    low = price * (1 - np.abs(noise))
+
+    df = pd.DataFrame(
+        {
+            "Open": price.shift(1).fillna(price.iloc[0]),
+            "High": high,
+            "Low": low,
+            "Close": price,
+            "Adj Close": price,
+            "Volume": rng.integers(500_000, 5_000_000, size=n),
+        },
+        index=idx,
+    )
+    df.attrs["placeholder"] = True
+    return df
+
 # =========================
 # Descarga de datos robusta
 # =========================
@@ -47,7 +103,9 @@ def fetch_price_history(ticker: str, period="1y", interval="1d"):
                 continue
     except Exception:
         pass
-    return None
+
+    # Fallback sintético para mantener la app operativa
+    return _generate_placeholder_history(tk or "PX", period=period, interval=interval)
 
 @st.cache_data(show_spinner=False)
 def load_multi_prices(tickers, period="1y", interval="1d"):
@@ -60,36 +118,44 @@ def load_multi_prices(tickers, period="1y", interval="1d"):
             tickers, period=period, interval=interval,
             auto_adjust=False, progress=False, threads=False
         )
-        if data is None or data.empty:
-            return None
-
-        adj = None
-        if isinstance(data.columns, pd.MultiIndex):
-            if "Adj Close" in data.columns.get_level_values(0):
-                adj = data["Adj Close"]
-            elif "Adj Close" in data.columns.get_level_values(-1):
-                adj = data.xs("Adj Close", axis=1, level=-1)
-            elif "Close" in data.columns.get_level_values(0):
-                adj = data["Close"]
+        if data is not None and not data.empty:
+            adj = None
+            if isinstance(data.columns, pd.MultiIndex):
+                if "Adj Close" in data.columns.get_level_values(0):
+                    adj = data["Adj Close"]
+                elif "Adj Close" in data.columns.get_level_values(-1):
+                    adj = data.xs("Adj Close", axis=1, level=-1)
+                elif "Close" in data.columns.get_level_values(0):
+                    adj = data["Close"]
+                else:
+                    adj = data.xs("Close", axis=1, level=-1, drop_level=True)
             else:
-                adj = data.xs("Close", axis=1, level=-1, drop_level=True)
-        else:
-            if "Adj Close" in data.columns:
-                adj = data["Adj Close"]
-            elif "Close" in data.columns:
-                adj = data["Close"]
-            else:
-                return None
+                if "Adj Close" in data.columns:
+                    adj = data["Adj Close"]
+                elif "Close" in data.columns:
+                    adj = data["Close"]
+                else:
+                    return None
 
-        if isinstance(adj, pd.Series):
-            name = tickers if isinstance(tickers, str) else (tickers[0] if tickers else "PX")
-            adj = adj.to_frame(name=name)
+            if isinstance(adj, pd.Series):
+                name = tickers if isinstance(tickers, str) else (tickers[0] if tickers else "PX")
+                adj = adj.to_frame(name=name)
 
-        adj = adj.dropna(how="all").sort_index()
-        adj.index = pd.to_datetime(adj.index).tz_localize(None)
-        return adj
+            adj = adj.dropna(how="all").sort_index()
+            adj.index = pd.to_datetime(adj.index).tz_localize(None)
+            return adj
     except Exception:
-        return None
+        pass
+
+    # Si falla la descarga, generar trayectorias sintéticas para todos los tickers solicitados
+    tick_list = tickers if isinstance(tickers, (list, tuple, pd.Index)) else [tickers]
+    synthetic = []
+    for tk in tick_list:
+        df = _generate_placeholder_history(tk, period=period, interval=interval)
+        synthetic.append(df["Adj Close"].rename(tk))
+    adj = pd.concat(synthetic, axis=1)
+    adj.attrs["placeholder"] = True
+    return adj
 
 @st.cache_data(show_spinner=False)
 def get_financial_highlights(ticker: str) -> pd.DataFrame:
@@ -370,8 +436,9 @@ def capm_analysis(ticker: str, market: str, period="1y", freq="Diaria"):
     """
     prices_i = load_multi_prices([ticker], period=period, interval="1d")
     prices_m = load_multi_prices([market], period=period, interval="1d")
+    placeholder = bool(getattr(prices_i, "attrs", {}).get("placeholder") or getattr(prices_m, "attrs", {}).get("placeholder"))
     if prices_i is None or prices_m is None:
-        return {"returns": None}
+        return {"returns": None, "placeholder": placeholder}
 
     df = pd.concat([prices_i[ticker], prices_m[market]], axis=1).dropna()
     df.columns = ["Pi", "Pm"]
@@ -386,7 +453,7 @@ def capm_analysis(ticker: str, market: str, period="1y", freq="Diaria"):
     aligned = pd.concat([ri, rm], axis=1).dropna()
     aligned.columns = ["Ri", "Rm"]
     if aligned.empty or len(aligned) < 20:
-        return {"returns": None}
+        return {"returns": None, "placeholder": placeholder}
 
     cov = np.cov(aligned["Ri"], aligned["Rm"])[0, 1]
     var_m = np.var(aligned["Rm"])
@@ -405,6 +472,7 @@ def capm_analysis(ticker: str, market: str, period="1y", freq="Diaria"):
         "beta": float(beta),
         "r2": float(r2),
         "sigma_e": float(sigma_e),
+        "placeholder": placeholder,
     }
 
 def rolling_beta_series(ri_rm: pd.DataFrame, window=60) -> pd.DataFrame:
@@ -436,8 +504,9 @@ def _portfolio_stats(w: np.ndarray, mu: pd.Series, cov: pd.DataFrame, rf: float)
 @st.cache_data(show_spinner=False)
 def efficient_frontier_simulation(tickers, period="1y", rf=0.03, n_portfolios=15000, allow_short=False):
     prices = load_multi_prices(tickers, period=period, interval="1d")
+    placeholder = bool(getattr(prices, "attrs", {}).get("placeholder"))
     if prices is None or prices.empty:
-        return {"prices": None}
+        return {"prices": None, "placeholder": placeholder}
 
     mu, cov = _annualized_stats(prices)
     n = len(tickers)
@@ -493,4 +562,5 @@ def efficient_frontier_simulation(tickers, period="1y", rf=0.03, n_portfolios=15
         "specials": specials,
         "weights_tables": weights_tables,
         "rebased_series": rebased_series,
+        "placeholder": placeholder,
     }
