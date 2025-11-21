@@ -17,18 +17,18 @@ from utils import (
 
 st.set_page_config(page_title="Valuación & Portafolio", layout="wide")
 
-PRIMARY_COLOR = "#0f4c75"
-ACCENT_COLOR = "#e76f51"
+PRIMARY_COLOR = "#1d4ed8"
+ACCENT_COLOR = "#ef4444"
 
 COLOR_PALETTE = [
     PRIMARY_COLOR,
-    "#3282b8",
-    "#1b262c",
-    "#f4a261",
+    "#0ea5e9",
+    "#a855f7",
+    "#22c55e",
     ACCENT_COLOR,
-    "#5e60ce",
-    "#46a3ff",
-    "#72efdd",
+    "#f59e0b",
+    "#6366f1",
+    "#14b8a6",
 ]
 
 
@@ -44,14 +44,14 @@ def safe_update_layout(fig, **kwargs):
 def apply_elegant_layout(fig):
     safe_update_layout(
         fig,
-        template="plotly_white",
-        plot_bgcolor="#f7f9fb",
-        paper_bgcolor="#f7f9fb",
-        font=dict(color="#0f172a", family="'Inter', 'Helvetica', sans-serif"),
+        template="plotly_dark",
+        plot_bgcolor="#0b1220",
+        paper_bgcolor="#0b1220",
+        font=dict(color="#e5e7eb", family="'Inter', 'Helvetica', sans-serif"),
         legend_title_text="",
     )
-    fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb")
-    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb")
+    fig.update_xaxes(showgrid=True, gridcolor="#1f2937", zerolinecolor="#1f2937")
+    fig.update_yaxes(showgrid=True, gridcolor="#1f2937", zerolinecolor="#1f2937")
     return fig
 
 
@@ -63,15 +63,16 @@ st.markdown(
         --accent-color: {ACCENT_COLOR};
     }}
     .stApp {{
-        background: linear-gradient(135deg, #f7f9fb 0%, #eef2f7 50%, #f7f9fb 100%);
-        color: #0f172a;
+        background: radial-gradient(circle at 20% 20%, #111827 0%, #0b1220 35%, #0b1220 100%);
+        color: #e5e7eb;
     }}
     h1, h2, h3, h4 {{
         font-family: 'Inter', 'Helvetica', sans-serif;
         letter-spacing: 0.2px;
+        color: #f8fafc;
     }}
     .stSidebar, .stSidebar .stSelectbox, .stSidebar .stRadio {{
-        background: #0f172a;
+        background: #0b1220;
         color: #e5e7eb;
     }}
     .stSidebar h2, .stSidebar p, .stSidebar label {{
@@ -89,9 +90,20 @@ st.markdown(
         color: #fff;
     }}
     .stMetric label {{
-        color: #4b5563;
+        color: #cbd5e1;
     }}
-    .stDataFrame, .stTable {{ background: #ffffff88; }}
+    .stDataFrame, .stTable {{
+        background: #0f172a;
+        color: #e5e7eb;
+    }}
+    .stDataFrame th, .stDataFrame td, .stTable th, .stTable td {{
+        color: #e5e7eb !important;
+        background-color: #0f172a !important;
+    }}
+    .stAlert {{
+        background-color: #111827;
+        color: #e5e7eb;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
