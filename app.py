@@ -7,6 +7,8 @@ import plotly.express as px
 from utils import (
     fetch_price_history,
     get_financial_highlights,
+    get_company_profile,
+    get_latest_news,
     rebase_to_100,
     load_multi_prices,
     compute_portfolio_metrics,
@@ -145,6 +147,50 @@ if mod == "Consulta de Acciones":
             st.subheader("Top 10 datos financieros relevantes")
             highlights = get_financial_highlights(ticker)
             st.dataframe(highlights, use_container_width=True)
+
+            # Perfil y noticia más reciente
+            st.subheader("Perfil y última noticia")
+            profile = get_company_profile(ticker)
+            news = get_latest_news(ticker)
+
+            p1, p2 = st.columns([2, 1])
+            with p1:
+                summary = profile.get("summary")
+                name = profile.get("name") or ticker
+                lines = []
+                if profile.get("sector"):
+                    lines.append(f"**Sector:** {profile['sector']}")
+                if profile.get("industry"):
+                    lines.append(f"**Industria:** {profile['industry']}")
+                if profile.get("website"):
+                    lines.append(f"**Sitio web:** [{profile['website']}]({profile['website']})")
+
+                st.markdown(f"**{name}**")
+                if lines:
+                    st.markdown("<br>".join(lines), unsafe_allow_html=True)
+                if summary:
+                    st.write(summary)
+                else:
+                    st.info("No se encontró una descripción breve para esta empresa.")
+
+            with p2:
+                if news:
+                    title = news.get("title") or "Noticia reciente"
+                    link = news.get("link")
+                    publisher = news.get("publisher")
+                    ts = news.get("published")
+                    date_str = ts.strftime("%Y-%m-%d %H:%M") if pd.notnull(ts) else None
+
+                    st.markdown("**Último titular en Yahoo Finance**")
+                    if link:
+                        st.markdown(f"[{title}]({link})")
+                    else:
+                        st.write(title)
+                    if publisher or date_str:
+                        meta = " · ".join([p for p in [publisher, date_str] if p])
+                        st.caption(meta)
+                else:
+                    st.info("No se encontraron noticias recientes para este ticker.")
 
             # Análisis de riesgo
             st.subheader("Riesgo de la acción")
